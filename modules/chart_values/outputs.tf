@@ -22,8 +22,3 @@ output "ingress_class_manifest" {
     acm_certificate_arn = var.acm_certificate_arn
   })
 }
-
-output "namespace" {
-  description = "Namespace the install targets. Echoed back so callers rendering install commands read it from one place."
-  value       = var.namespace
-}

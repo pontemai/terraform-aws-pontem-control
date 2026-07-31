@@ -20,8 +20,8 @@ data "aws_iam_policy_document" "cluster_assume" {
 }
 
 resource "aws_iam_role" "cluster" {
-  name               = "${local.name_prefix}-eks-cluster"
-  description        = "Control-plane role for the ${local.cluster_name} EKS cluster."
+  name               = "${var.name_prefix}-eks-cluster"
+  description        = "Control-plane role for the ${var.name_prefix} EKS cluster."
   assume_role_policy = data.aws_iam_policy_document.cluster_assume.json
 
   tags = local.tags
@@ -61,14 +61,14 @@ resource "aws_iam_role_policy_attachment" "cluster_networking" {
 # auto-create this exact log group on first log delivery, with never-expire
 # retention, and bill for it indefinitely.
 resource "aws_cloudwatch_log_group" "cluster" {
-  name              = "/aws/eks/${local.cluster_name}/cluster"
+  name              = "/aws/eks/${var.name_prefix}/cluster"
   retention_in_days = var.cloudwatch_log_retention_days
 
   tags = local.tags
 }
 
 resource "aws_eks_cluster" "this" {
-  name     = local.cluster_name
+  name     = var.name_prefix
   version  = var.kubernetes_version
   role_arn = aws_iam_role.cluster.arn
 
@@ -160,8 +160,8 @@ data "aws_iam_policy_document" "node_assume" {
 }
 
 resource "aws_iam_role" "auto_node" {
-  name               = "${local.name_prefix}-eks-auto-node"
-  description        = "Node role for Auto Mode-launched nodes in the ${local.cluster_name} cluster."
+  name               = "${var.name_prefix}-eks-auto-node"
+  description        = "Node role for Auto Mode-launched nodes in the ${var.name_prefix} cluster."
   assume_role_policy = data.aws_iam_policy_document.node_assume.json
 
   tags = local.tags

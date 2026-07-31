@@ -34,7 +34,6 @@ file in the pull request. Run `make goldens` from the repo root to re-render the
 | db\_name | Application database name. | `string` | n/a | yes |
 | db\_port | RDS Postgres port. | `number` | n/a | yes |
 | db\_user | Application database user. | `string` | n/a | yes |
-| namespace | Namespace the chart is installed into. Not itself a chart value — it is rendered into the install commands the README quotes and keeps them consistent with the Pod Identity associations. | `string` | n/a | yes |
 | oidc\_audience | OIDC API audience, rendered as both auth.oidc.audience (the API's validation) and admin.auth0.audience (what the browser requests tokens for). One value, two consumers — they have to agree. | `string` | n/a | yes |
 | oidc\_client\_id | Public SPA client ID, rendered as admin.auth0.clientId. Browser-only. | `string` | n/a | yes |
 | oidc\_domain | Identity provider host with no scheme, e.g. "your-tenant.us.auth0.com", rendered as admin.auth0.domain. The admin container rebuilds "https://<host>/" from it, so a scheme here would produce a doubled one. | `string` | n/a | yes |
@@ -48,5 +47,4 @@ file in the pull request. Run `make goldens` from the repo root to re-render the
 | ---- | ----------- |
 | helm\_values | Rendered pontem-control chart values for this deployment. |
 | ingress\_class\_manifest | The `alb` IngressClass and its IngressClassParams, as a manifest to apply with kubectl. |
-| namespace | Namespace the install targets. Echoed back so callers rendering install commands read it from one place. |
 <!-- END_TF_DOCS -->

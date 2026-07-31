@@ -40,7 +40,7 @@ resource "aws_vpc" "this" {
   enable_dns_hostnames = true
 
   tags = merge(local.tags, {
-    Name = local.name_prefix
+    Name = var.name_prefix
   })
 }
 
@@ -48,7 +48,7 @@ resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 
   tags = merge(local.tags, {
-    Name = local.name_prefix
+    Name = var.name_prefix
   })
 }
 
@@ -66,7 +66,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = merge(local.tags, {
-    Name                     = "${local.name_prefix}-public-${local.azs[count.index]}"
+    Name                     = "${var.name_prefix}-public-${local.azs[count.index]}"
     "kubernetes.io/role/elb" = "1"
   })
 }
@@ -79,7 +79,7 @@ resource "aws_subnet" "private" {
   availability_zone = local.azs[count.index]
 
   tags = merge(local.tags, {
-    Name                              = "${local.name_prefix}-private-${local.azs[count.index]}"
+    Name                              = "${var.name_prefix}-private-${local.azs[count.index]}"
     "kubernetes.io/role/internal-elb" = "1"
   })
 }
@@ -90,7 +90,7 @@ resource "aws_eip" "nat" {
   domain = "vpc"
 
   tags = merge(local.tags, {
-    Name = "${local.name_prefix}-nat-${count.index}"
+    Name = "${var.name_prefix}-nat-${count.index}"
   })
 }
 
@@ -101,7 +101,7 @@ resource "aws_nat_gateway" "this" {
   subnet_id     = aws_subnet.public[count.index].id
 
   tags = merge(local.tags, {
-    Name = "${local.name_prefix}-${local.azs[count.index]}"
+    Name = "${var.name_prefix}-${local.azs[count.index]}"
   })
 
   depends_on = [aws_internet_gateway.this]
@@ -116,7 +116,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = merge(local.tags, {
-    Name = "${local.name_prefix}-public"
+    Name = "${var.name_prefix}-public"
   })
 }
 
@@ -141,7 +141,7 @@ resource "aws_route_table" "private" {
   }
 
   tags = merge(local.tags, {
-    Name = "${local.name_prefix}-private-${local.azs[count.index]}"
+    Name = "${var.name_prefix}-private-${local.azs[count.index]}"
   })
 }
 

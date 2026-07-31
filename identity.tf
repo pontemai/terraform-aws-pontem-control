@@ -54,8 +54,8 @@ data "aws_iam_policy_document" "cp_runtime_assume" {
 }
 
 resource "aws_iam_role" "cp_runtime" {
-  name               = "${local.name_prefix}-cp-runtime"
-  description        = "Runtime identity for the pontem-control api/worker pods in ${local.cluster_name}, assumed via EKS Pod Identity: tenant-secret CRUD in Secrets Manager, and the AWS identity Pontem's GCP Workload Identity Federation provider trusts."
+  name               = "${var.name_prefix}-cp-runtime"
+  description        = "Runtime identity for the pontem-control api/worker pods in ${var.name_prefix}, assumed via EKS Pod Identity: tenant-secret CRUD in Secrets Manager, and the AWS identity Pontem's GCP Workload Identity Federation provider trusts."
   assume_role_policy = data.aws_iam_policy_document.cp_runtime_assume.json
 
   tags = local.tags
@@ -93,7 +93,7 @@ data "aws_iam_policy_document" "cp_runtime" {
 }
 
 resource "aws_iam_role_policy" "cp_runtime" {
-  name   = "${local.name_prefix}-cp-runtime"
+  name   = "${var.name_prefix}-cp-runtime"
   role   = aws_iam_role.cp_runtime.id
   policy = data.aws_iam_policy_document.cp_runtime.json
 }
@@ -135,8 +135,8 @@ data "aws_iam_policy_document" "eso_assume" {
 resource "aws_iam_role" "eso" {
   count = var.enable_external_secrets_iam ? 1 : 0
 
-  name               = "${local.name_prefix}-external-secrets"
-  description        = "External Secrets Operator controller in ${local.cluster_name}, assumed via EKS Pod Identity. Read-only on this module's two boot secrets."
+  name               = "${var.name_prefix}-external-secrets"
+  description        = "External Secrets Operator controller in ${var.name_prefix}, assumed via EKS Pod Identity. Read-only on this module's two boot secrets."
   assume_role_policy = data.aws_iam_policy_document.eso_assume[0].json
 
   tags = local.tags
@@ -161,7 +161,7 @@ data "aws_iam_policy_document" "eso" {
 resource "aws_iam_role_policy" "eso" {
   count = var.enable_external_secrets_iam ? 1 : 0
 
-  name   = "${local.name_prefix}-external-secrets"
+  name   = "${var.name_prefix}-external-secrets"
   role   = aws_iam_role.eso[0].id
   policy = data.aws_iam_policy_document.eso[0].json
 }

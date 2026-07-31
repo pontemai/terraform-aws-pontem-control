@@ -4,14 +4,14 @@
 # RDS requires a subnet group spanning at least two AZs even for a single-AZ
 # instance. The instance itself sits in one AZ unless db_multi_az is set.
 resource "aws_db_subnet_group" "this" {
-  name       = local.name_prefix
+  name       = var.name_prefix
   subnet_ids = aws_subnet.private[*].id
 
   tags = local.tags
 }
 
 resource "aws_security_group" "db" {
-  name_prefix = "${local.name_prefix}-db-"
+  name_prefix = "${var.name_prefix}-db-"
   description = "RDS Postgres for pontem-control - admits only the EKS cluster security group."
   vpc_id      = aws_vpc.this.id
 
@@ -36,7 +36,7 @@ resource "aws_security_group" "db" {
   }
 
   tags = merge(local.tags, {
-    Name = "${local.name_prefix}-db"
+    Name = "${var.name_prefix}-db"
   })
 }
 
@@ -54,13 +54,13 @@ resource "random_password" "db" {
   special = false
 
   keepers = {
-    identifier = local.name_prefix
+    identifier = var.name_prefix
     region     = local.region
   }
 }
 
 resource "aws_db_instance" "this" {
-  identifier = local.name_prefix
+  identifier = var.name_prefix
 
   # Major-only pins the family and lets RDS pick and patch the minor
   # (auto_minor_version_upgrade defaults to true).
@@ -111,7 +111,7 @@ resource "aws_db_instance" "this" {
   # identifier already exists. Deleting or renaming the old snapshot is the fix,
   # and the README says so.
   skip_final_snapshot       = false
-  final_snapshot_identifier = "${local.name_prefix}-final"
+  final_snapshot_identifier = "${var.name_prefix}-final"
 
   tags = local.tags
 

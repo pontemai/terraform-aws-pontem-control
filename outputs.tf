@@ -7,7 +7,6 @@ module "chart_values" {
   app_domain_name     = var.app_domain_name
   aws_region          = local.region
   acm_certificate_arn = local.acm_certificate_arn
-  namespace           = var.namespace
 
   db_host = aws_db_instance.this.address
   db_port = aws_db_instance.this.port
@@ -174,5 +173,5 @@ output "ingress_class_manifest" {
 
 output "namespace" {
   description = "Namespace to install the chart into. The Pod Identity associations bind service accounts in this namespace, so `helm install -n` must match it."
-  value       = module.chart_values.namespace
+  value       = var.namespace
 }

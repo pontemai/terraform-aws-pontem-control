@@ -6,14 +6,12 @@ locals {
   region     = data.aws_region.current.region
   account_id = data.aws_caller_identity.current.account_id
 
-  name_prefix  = var.name_prefix
-  cluster_name = var.name_prefix
-
   # The admin app is configured with the identity provider's HOST, not its issuer
-  # URL — its container builds "https://<host>/" back up itself. The validation on
-  # oidc_issuer guarantees no path, so stripping the scheme and trailing slash is
-  # exact rather than a best guess.
-  oidc_domain = replace(replace(var.oidc_issuer, "https://", ""), "/", "")
+  # URL — its container builds "https://<host>/" back up itself. trimprefix and
+  # trimsuffix rather than replace(): replace would strip a slash from anywhere in
+  # the string, so it would silently mangle a value the validation on oidc_issuer
+  # was supposed to have rejected instead of failing on it.
+  oidc_domain = trimsuffix(trimprefix(lower(var.oidc_issuer), "https://"), "/")
 
   # Tags are merged onto each resource individually rather than relying on the
   # provider's default_tags: the provider block belongs to the caller, and a

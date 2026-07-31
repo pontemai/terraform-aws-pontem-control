@@ -178,7 +178,7 @@ run "values_satisfy_the_chart_contract" {
   # Regenerate with `make goldens` when the change is intended.
   assert {
     condition     = output.helm_values == file("${path.module}/tests/golden_values.yaml")
-    error_message = "The rendered values no longer match tests/golden_values.yaml. If the change is intended, run `make goldens` and review the diff."
+    error_message = "The rendered values does not match tests/golden_values.yaml. If the change is intended, run `make goldens` and review the diff."
   }
 }
 
@@ -222,6 +222,6 @@ run "ingress_class_manifest_wires_the_alb_controller" {
 
   assert {
     condition     = output.ingress_class_manifest == file("${path.module}/tests/golden_ingressclass.yaml")
-    error_message = "The rendered IngressClass manifest no longer matches tests/golden_ingressclass.yaml. If the change is intended, run `make goldens` and review the diff."
+    error_message = "The rendered IngressClass manifest does not matches tests/golden_ingressclass.yaml. If the change is intended, run `make goldens` and review the diff."
   }
 }

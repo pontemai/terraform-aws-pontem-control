@@ -33,11 +33,6 @@ variable "db_user" {
   type        = string
 }
 
-variable "namespace" {
-  description = "Namespace the chart is installed into. Not itself a chart value — it is rendered into the install commands the README quotes and keeps them consistent with the Pod Identity associations."
-  type        = string
-}
-
 variable "credentials_secret_name" {
   description = "Name of the Kubernetes Secret holding the application's secret environment; becomes credentials.existingSecret.name."
   type        = string

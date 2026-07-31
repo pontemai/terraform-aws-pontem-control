@@ -2,11 +2,10 @@
 #
 # Two things are being guarded. First, the arithmetic: subnet CIDRs, NAT counts,
 # and per-AZ route tables are computed from variables, and an off-by-one there
-# produces overlapping subnets or an AZ with no egress. Second, and more
-# important, the deliberate posture choices — this module is distilled from an
-# internal dev stack that had the opposite answer for several of them, and a
-# careless port back would quietly reintroduce a dev default into a customer's
-# account. Each of those assertions names what would go wrong.
+# produces overlapping subnets or an AZ with no egress. Second, the defaults that
+# decide whether losing an availability zone or running a destroy is survivable —
+# Multi-AZ, deletion protection, backups, secret recovery, and the API endpoint
+# allowlist. Each assertion names what breaks if the default moves.
 
 mock_provider "aws" {
   source = "./tests/mocks"
@@ -23,10 +22,10 @@ variables {
   oidc_client_id                       = "ExampleSpaClientId"
 }
 
-run "defaults_are_production_posture" {
+run "default_configuration" {
   command = plan
 
-  # ----- The inversions from the internal dev stack -----
+  # ----- Durability and access defaults -----
 
   assert {
     condition     = aws_db_instance.this.multi_az == true
@@ -35,7 +34,7 @@ run "defaults_are_production_posture" {
 
   assert {
     condition     = aws_db_instance.this.deletion_protection == true
-    error_message = "The database must default to deletion-protected — the internal stack it was ported from has this off, and inheriting that would make `terraform destroy` silently unrecoverable."
+    error_message = "The database must default to deletion-protected; without it `terraform destroy` removes the only durable store with no confirmation step."
   }
 
   assert {
@@ -70,7 +69,7 @@ run "defaults_are_production_posture" {
 
   assert {
     condition     = aws_secretsmanager_secret.db_password.recovery_window_in_days == 30
-    error_message = "Secrets must default to a recovery window; the internal stack force-deletes at 0 so it can re-apply freely, which trades away accidental-deletion recovery."
+    error_message = "Secrets must default to a non-zero recovery window; at 0 a deleted secret is unrecoverable."
   }
 
   # ----- Cluster access: the part that locks people out -----
@@ -87,7 +86,7 @@ run "defaults_are_production_posture" {
 
   assert {
     condition     = aws_eks_cluster.this.vpc_config[0].public_access_cidrs == toset(["203.0.113.0/24"])
-    error_message = "The public API endpoint must be restricted to the CIDRs given, not left world-open as the internal stack leaves it."
+    error_message = "The public API endpoint must be restricted to the CIDRs given, not left open to every source."
   }
 
   assert {
@@ -202,6 +201,22 @@ run "defaults_are_production_posture" {
   }
 }
 
+run "issuer_host_reaches_the_admin_app_lowercased" {
+  command = plan
+
+  variables {
+    oidc_issuer = "https://Example.US.auth0.com/"
+  }
+
+  # Hostnames are case-insensitive so a mixed-case issuer is legitimate, but the
+  # admin app compares the host it is given against what the provider returns, and
+  # the scheme and trailing slash must be gone because the container adds them back.
+  assert {
+    condition     = local.oidc_domain == "example.us.auth0.com"
+    error_message = "The issuer host handed to the admin app must be lowercased with the scheme and any trailing slash removed."
+  }
+}
+
 run "single_nat_gateway_still_routes_every_az" {
   command = plan
 
@@ -215,8 +230,8 @@ run "single_nat_gateway_still_routes_every_az" {
   }
 
   # The regression this guards: collapsing the NAT count without re-pointing the
-  # route tables leaves the second AZ's table referencing an index that no longer
-  # exists, or worse, silently loses its default route.
+  # route tables leaves the second AZ's table indexing past the end of the gateway
+  # list, or silently drops its default route.
   assert {
     condition     = length(aws_route_table.private) == 2 && length(aws_route_table_association.private) == 2
     error_message = "Every AZ must keep its own private route table and association even when sharing one NAT gateway."

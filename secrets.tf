@@ -2,8 +2,7 @@
 # JWT signing key. Both are generated here, so both live in Terraform state —
 # treat the state file as secret material and keep it in an encrypted backend.
 #
-# Deliberately NOT here, even though the internal Pontem stack this is distilled
-# from has them:
+# Two things a reader might expect here and will not find:
 #
 #   * The OIDC issuer and audience. They are public metadata your users'
 #     browsers already fetch, and the chart takes them as plain values
@@ -32,7 +31,7 @@ resource "random_id" "device_jwt_signing_key" {
 }
 
 resource "aws_secretsmanager_secret" "db_password" {
-  name                    = "${local.name_prefix}-db-password"
+  name                    = "${var.name_prefix}-db-password"
   description             = "RDS Postgres password for pontem-control (DATABASE_PASSWORD)."
   recovery_window_in_days = var.secret_recovery_window_days
 
@@ -47,7 +46,7 @@ resource "aws_secretsmanager_secret_version" "db_password" {
 }
 
 resource "aws_secretsmanager_secret" "device_jwt_signing_key" {
-  name                    = "${local.name_prefix}-device-jwt-signing-key"
+  name                    = "${var.name_prefix}-device-jwt-signing-key"
   description             = "Ed25519 device-JWT signing key for pontem-control (DEVICE_JWT_SIGNING_KEY): standard base64 of exactly 32 bytes. Rotating it invalidates every enrolled device's JWT."
   recovery_window_in_days = var.secret_recovery_window_days
 

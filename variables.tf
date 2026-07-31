@@ -279,9 +279,11 @@ variable "oidc_issuer" {
   description = "OIDC issuer URL, e.g. \"https://your-tenant.us.auth0.com/\". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there."
   type        = string
 
+  # Hostnames are case-insensitive, so mixed case is accepted here and lowercased
+  # before it reaches the admin app (locals.tf).
   validation {
-    condition     = can(regex("^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/?$", var.oidc_issuer))
-    error_message = "oidc_issuer must be an https origin with no path, e.g. \"https://your-tenant.us.auth0.com/\". A provider whose issuer carries a path (some Okta and Keycloak setups) cannot drive the admin app, which takes the host alone."
+    condition     = can(regex("^https://[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+/?$", var.oidc_issuer))
+    error_message = "oidc_issuer must be an https origin with no path or port, e.g. \"https://your-tenant.us.auth0.com/\". A provider whose issuer carries a path (some Okta and Keycloak setups) cannot drive the admin app, which takes the host alone."
   }
 }
 
