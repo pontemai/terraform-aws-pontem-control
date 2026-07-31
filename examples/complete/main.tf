@@ -26,8 +26,8 @@ module "pontem_control" {
     "arn:aws:iam::123456789012:role/YourAdminRole",
   ]
 
-  # Where those principals connect from. Narrow this to your office or VPN egress
-  # if you can; ["0.0.0.0/0"] is a deliberate choice, not a default.
+  # Where those principals connect from. Sources outside this list cannot reach the
+  # Kubernetes API; ["0.0.0.0/0"] allows all of them.
   cluster_endpoint_public_access_cidrs = [
     "203.0.113.0/24",
   ]
@@ -47,10 +47,8 @@ module "pontem_control" {
   # emitted for you to create wherever your DNS lives.
   # route53_zone_id = "Z0123456789ABCDEFGHIJ"
 
-  # Evaluation-scale cost dials. Together these are most of the monthly bill:
-  # single_nat_gateway saves roughly $33/month per AZ dropped, and db_multi_az
-  # roughly halves the database cost. Both trade away availability, so they are
-  # the knobs to turn for a trial and turn back for production.
+  # The two inputs that move most of the monthly bill, and what each costs you in
+  # availability. See the README's Cost section.
   # single_nat_gateway = true
   # db_multi_az        = false
 

@@ -6,7 +6,7 @@
 # ----- Required: no defaults, because a wrong default here is dangerous -----
 
 variable "app_domain_name" {
-  description = "Hostname the control plane is served at, e.g. \"pontem.example.com\". The ACM certificate covers exactly this name, and it becomes the chart's ingress.domain. Changing it replaces the certificate only — safe, and the old one stays attached until the new one is issued."
+  description = "Hostname the control plane is served at, e.g. \"pontem.example.com\". The ACM certificate covers exactly this name, and it becomes the chart's ingress.domain. Changing it replaces the certificate and nothing else; the old certificate stays attached until the new one is issued."
   type        = string
 
   validation {
@@ -16,7 +16,7 @@ variable "app_domain_name" {
 }
 
 variable "cluster_admin_principal_arns" {
-  description = "IAM principal ARNs granted cluster-admin on the EKS cluster via access entries. This is the ONLY path to the Kubernetes API: the cluster-creator bootstrap flag is off deliberately (see eks.tf), so a principal absent from this list cannot run kubectl no matter what IAM permissions it holds. Include the principal that will run the install steps, or the install cannot proceed."
+  description = "IAM principal ARNs granted cluster-admin on the EKS cluster. This is the ONLY path to the Kubernetes API: a principal absent from this list cannot run kubectl no matter what IAM permissions it holds, including the one that created the cluster. Include the principal that will run the install steps, or the install cannot proceed."
   type        = list(string)
 
   validation {
@@ -31,7 +31,7 @@ variable "cluster_admin_principal_arns" {
 }
 
 variable "cluster_endpoint_public_access_cidrs" {
-  description = "CIDRs allowed to reach the public EKS API endpoint. There is no default on purpose: the internal Pontem stack this is distilled from leaves the endpoint world-open with a \"tighten before prod\" note, which is not a posture to ship to someone else. Use [\"0.0.0.0/0\"] only if you have decided that deliberately; the API is still IAM-gated, but so is everything an attacker would try against it."
+  description = "CIDRs allowed to reach the public EKS API endpoint. Anything outside them cannot reach the Kubernetes API at all; the endpoint is also IAM-gated independently of this list. [\"0.0.0.0/0\"] allows every source."
   type        = list(string)
 
   validation {
@@ -48,7 +48,7 @@ variable "cluster_endpoint_public_access_cidrs" {
 # ----- Naming -----
 
 variable "name_prefix" {
-  description = "Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE — the names are the resources' identity, so a new prefix means new resources and the old data is destroyed. Pick it once, before the first apply."
+  description = "Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes."
   type        = string
   default     = "pontem-control"
 
@@ -76,7 +76,7 @@ variable "tags" {
 # ----- Networking -----
 
 variable "vpc_cidr" {
-  description = "CIDR block for the dedicated VPC. Needs room for /20 subnets per AZ (public + private), so /16 is the comfortable choice. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database."
+  description = "CIDR block for the dedicated VPC. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database."
   type        = string
   default     = "10.0.0.0/16"
 
@@ -98,7 +98,7 @@ variable "availability_zone_count" {
 }
 
 variable "single_nat_gateway" {
-  description = "Route all private-subnet egress through one NAT gateway instead of one per AZ. Default false (one per AZ) because a shared NAT makes every AZ's egress depend on the NAT's AZ staying up. Setting it true saves roughly $33/month per AZ you drop and is a reasonable trade for an evaluation, not for production."
+  description = "Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up."
   type        = bool
   default     = false
 }
@@ -106,7 +106,7 @@ variable "single_nat_gateway" {
 # ----- EKS -----
 
 variable "kubernetes_version" {
-  description = "EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. Keep this near the newest version EKS offers — the cluster's upgrade policy is STANDARD, so a version that leaves standard support gets auto-upgraded rather than billed at the extended-support premium."
+  description = "EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade."
   type        = string
   default     = "1.36"
 
@@ -117,7 +117,7 @@ variable "kubernetes_version" {
 }
 
 variable "cloudwatch_log_retention_days" {
-  description = "Retention for the EKS control-plane log group. The log group is created here rather than left to EKS, which would create it with never-expire retention and bill for it forever."
+  description = "Retention for the EKS control-plane log group, which collects the api, audit, and authenticator logs. 0 keeps them forever."
   type        = number
   default     = 90
 
@@ -141,7 +141,7 @@ variable "db_engine_version" {
 }
 
 variable "db_instance_class" {
-  description = "RDS instance class. db.t4g.medium (2 vCPU / 4 GiB) is a sane starting point for a small fleet; the control plane's connection budget is modest but its query pattern is chatty. Changing this is an in-place modification with a short failover, not a replacement."
+  description = "RDS instance class. Changing it is an in-place modification with a short failover, not a replacement."
   type        = string
   default     = "db.t4g.medium"
 }
@@ -186,7 +186,7 @@ variable "db_user" {
 }
 
 variable "db_multi_az" {
-  description = "Run the database as a Multi-AZ deployment with a synchronous standby. Default true: this is the control plane's only durable store, and a single-AZ instance turns an AZ event into a full outage plus a restore. Roughly doubles the instance cost — the honest knob to turn down for an evaluation."
+  description = "Run the database as a Multi-AZ deployment with a synchronous standby. Roughly doubles the instance cost. False turns an AZ failure into an outage plus a restore from backup; the database is the control plane's only durable store."
   type        = bool
   default     = true
 }
@@ -203,7 +203,7 @@ variable "db_backup_retention_period" {
 }
 
 variable "db_deletion_protection" {
-  description = "Refuse to delete the database instance. Default true, which means a `terraform destroy` fails until you set this false and apply — deliberate friction on the one resource whose loss is unrecoverable."
+  description = "Refuse to delete the database instance. While true, `terraform destroy` fails until it is set false and applied."
   type        = bool
   default     = true
 }
@@ -211,7 +211,7 @@ variable "db_deletion_protection" {
 # ----- Secrets -----
 
 variable "secret_recovery_window_days" {
-  description = "Secrets Manager recovery window for the secrets this module creates. AWS keeps a deleted secret NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with an \"already scheduled for deletion\" error until the window expires. That is the trade for being able to recover a secret you deleted by mistake; set it to 0 if you are repeatedly building and tearing down a trial stack."
+  description = "Days a deleted secret stays recoverable. AWS keeps the deleted secret's NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with \"already scheduled for deletion\" until the window expires. 0 deletes immediately, which makes repeated build-and-tear-down cycles work."
   type        = number
   default     = 30
 
@@ -249,7 +249,7 @@ variable "pod_identity_service_accounts" {
 }
 
 variable "enable_external_secrets_iam" {
-  description = "Create the IAM role and Pod Identity association for External Secrets Operator, so ESO can read the two boot secrets instead of you copying them into a Kubernetes Secret by hand (README covers both paths). Harmless if you never install ESO: an association binds by service-account name and does nothing until a matching pod runs."
+  description = "Create the IAM role and Pod Identity association that let External Secrets Operator read the two secrets this module creates, as an alternative to creating the Kubernetes Secret by hand. Both paths are in the README. If ESO is never installed, the role and association have no effect."
   type        = bool
   default     = true
 }
@@ -296,7 +296,7 @@ variable "oidc_audience" {
 }
 
 variable "oidc_client_id" {
-  description = "Client ID of the public single-page-app client the admin UI signs in with. Needed only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy."
+  description = "Client ID of the public single-page-app client the admin UI signs in with. Used only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy."
   type        = string
 
   validation {
