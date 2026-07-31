@@ -45,15 +45,23 @@ variable "credentials_secret_name" {
 }
 
 variable "oidc_issuer" {
-  description = "OIDC issuer URL, rendered as auth.oidc.issuer. Empty means the value arrives through the application Secret instead."
+  description = "OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation."
   type        = string
-  default     = ""
 }
 
 variable "oidc_audience" {
-  description = "OIDC API audience, rendered as auth.oidc.audience. Empty means the value arrives through the application Secret instead."
+  description = "OIDC API audience, rendered as both auth.oidc.audience (the API's validation) and admin.auth0.audience (what the browser requests tokens for). One value, two consumers — they have to agree."
   type        = string
-  default     = ""
+}
+
+variable "oidc_client_id" {
+  description = "Public SPA client ID, rendered as admin.auth0.clientId. Browser-only."
+  type        = string
+}
+
+variable "oidc_domain" {
+  description = "Identity provider host with no scheme, e.g. \"your-tenant.us.auth0.com\", rendered as admin.auth0.domain. The admin container rebuilds \"https://<host>/\" from it, so a scheme here would produce a doubled one."
+  type        = string
 }
 
 variable "wif_audience" {

@@ -21,7 +21,7 @@ module "pontem_control" {
 | Name | Version |
 | ---- | ------- |
 | terraform | >= 1.6.0 |
-| aws | ~> 5.70 |
+| aws | ~> 6.0 |
 
 ## Outputs
 

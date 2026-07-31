@@ -18,6 +18,9 @@ variables {
   app_domain_name                      = "pontem.example.com"
   cluster_admin_principal_arns         = ["arn:aws:iam::123456789012:role/installer"]
   cluster_endpoint_public_access_cidrs = ["203.0.113.0/24"]
+  oidc_issuer                          = "https://example.us.auth0.com/"
+  oidc_audience                        = "https://api.example.com"
+  oidc_client_id                       = "ExampleSpaClientId"
 }
 
 run "defaults_are_production_posture" {

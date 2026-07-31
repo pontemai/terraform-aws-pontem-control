@@ -2,9 +2,14 @@ terraform {
   required_version = ">= 1.6.0"
 
   required_providers {
+    # Pinned to a major, not a minimum. A module's constraint is not local: it
+    # intersects with the constraints of the caller's root module and every other
+    # module they use, and an over-tight pin here means "no available provider
+    # matches all constraints" on someone else's `terraform init`. One major is the
+    # loosest constraint that still guarantees the attribute names below exist.
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.70"
+      version = "~> 6.0"
     }
 
     random = {

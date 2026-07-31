@@ -56,6 +56,15 @@ variable "name_prefix" {
     condition     = can(regex("^[a-z][a-z0-9-]{1,30}[a-z0-9]$", var.name_prefix))
     error_message = "name_prefix must be 3-32 lowercase alphanumeric-or-hyphen characters starting with a letter (it seeds RDS and EKS names, which are stricter than most)."
   }
+
+  # Checked separately from the character-class rule above so the message can say
+  # what is actually wrong. RDS rejects a doubled hyphen in an instance identifier,
+  # and it rejects it at instance creation — after the VPC, the NAT gateways, and a
+  # fifteen-minute cluster create have all succeeded.
+  validation {
+    condition     = !can(regex("--", var.name_prefix))
+    error_message = "name_prefix must not contain two consecutive hyphens — RDS rejects them in a database identifier."
+  }
 }
 
 variable "tags" {
@@ -78,7 +87,7 @@ variable "vpc_cidr" {
 }
 
 variable "availability_zone_count" {
-  description = "How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. CHANGING THIS REPLACES THE VPC's subnets."
+  description = "How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them."
   type        = number
   default     = 2
 
@@ -257,16 +266,41 @@ variable "external_secrets_service_account" {
   default     = "external-secrets"
 }
 
-# ----- Chart values the module cannot discover -----
+# ----- Your identity provider -----
+#
+# All three are required, and all three are public metadata your users' browsers
+# already fetch — none is a secret. Two consumers need them: the API validates
+# bearer tokens against the issuer and audience, and the admin single-page app
+# needs the issuer, audience, AND client id to start at all. Miss the client id
+# and the API works while the admin UI serves a blank page, so there is no
+# default for any of them.
 
 variable "oidc_issuer" {
-  description = "OIDC issuer URL for user authentication, e.g. \"https://your-tenant.us.auth0.com/\". Rendered into the chart values as auth.oidc.issuer. Not a secret — it is public metadata your users' browsers fetch. Leave empty to supply it through the application Secret instead."
+  description = "OIDC issuer URL, e.g. \"https://your-tenant.us.auth0.com/\". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there."
   type        = string
-  default     = ""
+
+  validation {
+    condition     = can(regex("^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/?$", var.oidc_issuer))
+    error_message = "oidc_issuer must be an https origin with no path, e.g. \"https://your-tenant.us.auth0.com/\". A provider whose issuer carries a path (some Okta and Keycloak setups) cannot drive the admin app, which takes the host alone."
+  }
 }
 
 variable "oidc_audience" {
-  description = "OIDC API audience the control plane validates access tokens against. Rendered into the chart values as auth.oidc.audience. Not a secret. Leave empty to supply it through the application Secret instead."
+  description = "OIDC API audience the control plane validates access tokens against, and that the admin app requests tokens for. These must be the same value or the API rejects every token the UI sends."
   type        = string
-  default     = ""
+
+  validation {
+    condition     = length(var.oidc_audience) > 0
+    error_message = "oidc_audience must be set."
+  }
+}
+
+variable "oidc_client_id" {
+  description = "Client ID of the public single-page-app client the admin UI signs in with. Needed only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy."
+  type        = string
+
+  validation {
+    condition     = length(var.oidc_client_id) > 0
+    error_message = "oidc_client_id must be set — the admin UI cannot start without it."
+  }
 }

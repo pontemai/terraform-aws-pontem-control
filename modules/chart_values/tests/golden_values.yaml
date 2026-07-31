@@ -5,8 +5,10 @@
 #
 # Two things this file cannot know, both supplied by Pontem:
 #   * gcp.wifAudience below, once Pontem has registered your AWS account and the
-#     control-plane runtime role. The chart refuses to install while it still
-#     reads REPLACE_ME_PONTEM_SUPPLIED.
+#     control-plane runtime role. Nothing rejects the REPLACE_ME_PONTEM_SUPPLIED
+#     placeholder — the chart only rejects an EMPTY value — so an install that
+#     skips the substitution succeeds and then fails the first time a managed
+#     package is pulled.
 #   * image.repository and admin.image.repository — the container images come
 #     from Pontem's registry, so pass them at install time
 #     (`--set image.repository=...`) or add them here.
@@ -25,10 +27,10 @@ credentials:
   existingSecret:
     name: pontem-control
 
+# How the API validates the bearer tokens it receives. Supplied as plain values
+# because none of this is secret.
 auth:
   userProvider: oidc
-  # Supplied as plain values because neither is secret. Left empty, both instead
-  # arrive as OIDC_ISSUER / OIDC_AUDIENCE keys in the Secret above.
   oidc:
     issuer: "https://example.us.auth0.com/"
     audience: "https://api.example.com"
@@ -76,6 +78,16 @@ api:
       alb.ingress.kubernetes.io/healthcheck-path: /health
 
 admin:
+  # The admin UI is a single-page app: it signs the user in from the browser, so
+  # it needs its own client configuration and cannot read any of this from the
+  # Secret. All three values must be present or the page fails to start, and it
+  # fails as a blank page — every pod stays healthy and /health keeps answering.
+  # `domain` is the host alone; the container builds "https://<host>/" from it.
+  authMode: auth0
+  auth0:
+    domain: example.us.auth0.com
+    clientId: "ExampleSpaClientId"
+    audience: "https://api.example.com"
   service:
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /healthz

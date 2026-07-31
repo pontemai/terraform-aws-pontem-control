@@ -14,8 +14,10 @@ module "chart_values" {
   db_name = aws_db_instance.this.db_name
   db_user = aws_db_instance.this.username
 
-  oidc_issuer   = var.oidc_issuer
-  oidc_audience = var.oidc_audience
+  oidc_issuer    = var.oidc_issuer
+  oidc_audience  = var.oidc_audience
+  oidc_client_id = var.oidc_client_id
+  oidc_domain    = local.oidc_domain
 }
 
 # ----- Cluster access -----
@@ -172,5 +174,5 @@ output "ingress_class_manifest" {
 
 output "namespace" {
   description = "Namespace to install the chart into. The Pod Identity associations bind service accounts in this namespace, so `helm install -n` must match it."
-  value       = var.namespace
+  value       = module.chart_values.namespace
 }

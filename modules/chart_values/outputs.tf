@@ -9,6 +9,8 @@ output "helm_values" {
     db_port                 = var.db_port
     db_user                 = var.db_user
     oidc_audience           = var.oidc_audience
+    oidc_client_id          = var.oidc_client_id
+    oidc_domain             = var.oidc_domain
     oidc_issuer             = var.oidc_issuer
     wif_audience            = var.wif_audience
   })

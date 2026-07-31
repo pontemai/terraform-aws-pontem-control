@@ -114,4 +114,15 @@ resource "aws_db_instance" "this" {
   final_snapshot_identifier = "${local.name_prefix}-final"
 
   tags = local.tags
+
+  # A precondition rather than a variable validation: validation blocks could not
+  # reference a second variable until Terraform 1.9, and this module supports 1.6.
+  # RDS rejects a non-zero autoscaling ceiling below the initial size, so without
+  # this the apply fails at instance creation rather than at plan.
+  lifecycle {
+    precondition {
+      condition     = var.db_max_allocated_storage >= var.db_allocated_storage
+      error_message = "db_max_allocated_storage (${var.db_max_allocated_storage}) must be greater than or equal to db_allocated_storage (${var.db_allocated_storage}); RDS rejects a storage-autoscaling ceiling below the initial size."
+    }
+  }
 }

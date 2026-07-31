@@ -17,5 +17,7 @@ db_port = 5432
 db_name = "pontem"
 db_user = "app"
 
-oidc_issuer   = "https://example.us.auth0.com/"
-oidc_audience = "https://api.example.com"
+oidc_issuer    = "https://example.us.auth0.com/"
+oidc_audience  = "https://api.example.com"
+oidc_client_id = "ExampleSpaClientId"
+oidc_domain    = "example.us.auth0.com"

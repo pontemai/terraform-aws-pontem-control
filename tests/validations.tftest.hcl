@@ -17,6 +17,9 @@ variables {
   app_domain_name                      = "pontem.example.com"
   cluster_admin_principal_arns         = ["arn:aws:iam::123456789012:role/admin"]
   cluster_endpoint_public_access_cidrs = ["203.0.113.0/24"]
+  oidc_issuer                          = "https://example.us.auth0.com/"
+  oidc_audience                        = "https://api.example.com"
+  oidc_client_id                       = "ExampleSpaClientId"
 }
 
 run "rejects_kubernetes_below_1_30" {
@@ -109,6 +112,19 @@ run "rejects_uppercase_name_prefix" {
   expect_failures = [var.name_prefix]
 }
 
+run "rejects_consecutive_hyphens_in_name_prefix" {
+  command = plan
+
+  variables {
+    name_prefix = "acme--pontem"
+  }
+
+  # Passes every other naming rule but RDS rejects a doubled hyphen in a database
+  # identifier — and it rejects it at instance creation, after the VPC, the NAT
+  # gateways, and a fifteen-minute cluster create have already succeeded.
+  expect_failures = [var.name_prefix]
+}
+
 run "rejects_domain_with_scheme" {
   command = plan
 
@@ -153,4 +169,39 @@ run "rejects_backup_retention_over_the_rds_limit" {
   }
 
   expect_failures = [var.db_backup_retention_period]
+}
+
+run "rejects_issuer_with_a_path" {
+  command = plan
+
+  variables {
+    oidc_issuer = "https://example.okta.com/oauth2/default"
+  }
+
+  # The admin app takes the identity provider's host alone and rebuilds the issuer
+  # URL from it, so an issuer carrying a path cannot be represented there. Failing
+  # here beats an admin UI that redirects to a login page that does not exist.
+  expect_failures = [var.oidc_issuer]
+}
+
+run "rejects_issuer_without_a_scheme" {
+  command = plan
+
+  variables {
+    oidc_issuer = "example.us.auth0.com"
+  }
+
+  expect_failures = [var.oidc_issuer]
+}
+
+run "rejects_empty_oidc_client_id" {
+  command = plan
+
+  variables {
+    oidc_client_id = ""
+  }
+
+  # The one input whose absence produces a healthy-looking deployment with an
+  # unusable admin UI, so it is worth rejecting at plan time.
+  expect_failures = [var.oidc_client_id]
 }

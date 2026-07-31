@@ -32,11 +32,12 @@ module "pontem_control" {
     "203.0.113.0/24",
   ]
 
-  # Your identity provider, for the people who will log in to the admin UI.
-  # Neither value is secret. Omit both to deliver them through the application
-  # Secret instead.
-  oidc_issuer   = "https://your-tenant.us.auth0.com/"
-  oidc_audience = "https://pontem.example.com"
+  # Your identity provider. The API validates bearer tokens against the issuer and
+  # audience; the admin UI signs users in from the browser and needs all three,
+  # including the public SPA client id. None of them is secret.
+  oidc_issuer    = "https://your-tenant.us.auth0.com/"
+  oidc_audience  = "https://pontem.example.com"
+  oidc_client_id = "YourAuth0SpaClientId"
 
   # ----- Optional -----
 

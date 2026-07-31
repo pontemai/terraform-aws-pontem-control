@@ -35,9 +35,11 @@ file in the pull request. Run `make goldens` from the repo root to re-render the
 | db\_port | RDS Postgres port. | `number` | n/a | yes |
 | db\_user | Application database user. | `string` | n/a | yes |
 | namespace | Namespace the chart is installed into. Not itself a chart value — it is rendered into the install commands the README quotes and keeps them consistent with the Pod Identity associations. | `string` | n/a | yes |
+| oidc\_audience | OIDC API audience, rendered as both auth.oidc.audience (the API's validation) and admin.auth0.audience (what the browser requests tokens for). One value, two consumers — they have to agree. | `string` | n/a | yes |
+| oidc\_client\_id | Public SPA client ID, rendered as admin.auth0.clientId. Browser-only. | `string` | n/a | yes |
+| oidc\_domain | Identity provider host with no scheme, e.g. "your-tenant.us.auth0.com", rendered as admin.auth0.domain. The admin container rebuilds "https://<host>/" from it, so a scheme here would produce a doubled one. | `string` | n/a | yes |
+| oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. | `string` | n/a | yes |
 | credentials\_secret\_name | Name of the Kubernetes Secret holding the application's secret environment; becomes credentials.existingSecret.name. | `string` | `"pontem-control"` | no |
-| oidc\_audience | OIDC API audience, rendered as auth.oidc.audience. Empty means the value arrives through the application Secret instead. | `string` | `""` | no |
-| oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer. Empty means the value arrives through the application Secret instead. | `string` | `""` | no |
 | wif\_audience | GCP Workload Identity Federation audience, rendered as gcp.wifAudience. Pontem issues this per customer once the AWS account and the control-plane runtime role ARN are known, so the default is a deliberately loud placeholder rather than an empty string — the chart refuses to install with it unset, and a sentinel is easier to spot in a diff than a blank. | `string` | `"REPLACE_ME_PONTEM_SUPPLIED"` | no |
 
 ## Outputs

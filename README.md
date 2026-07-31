@@ -10,6 +10,18 @@ One module creates everything the control plane needs and emits the chart values
 and manifests to install onto it. It does not share a VPC, cluster, or database
 with anything else in the account.
 
+## What this deployment does not do
+
+The control plane runs fully, with three gaps that come from parts of the product
+that need a Google Cloud backend the pods here have no identity for:
+
+- **No device metrics or logs.** The device metrics and logs endpoints, heartbeat
+  publishing, and the device logging-token broker are all off. Devices enroll,
+  receive configuration, and report status; their telemetry has nowhere to go.
+- **No tenant file storage.** The file endpoints answer 503.
+- **No membership invite emails**, unless you add a `RESEND_API_KEY` key to the
+  application Secret yourself.
+
 ## What it creates
 
 - A VPC with public and private subnets in two availability zones, an internet
@@ -37,7 +49,7 @@ apply with `kubectl`, so this stack never needs Kubernetes credentials.
 - A region that offers EKS Auto Mode. Not every region does, and the cluster
   create fails if yours doesn't.
 - From Pontem: a `gcp.wifAudience` value, and access to the container images and
-  the chart. Steps 3 and 6 cover when you need each.
+  the chart. Steps 4 and 7 cover when you need each.
 
 ## Cost
 
@@ -64,11 +76,12 @@ required inputs:
 | `app_domain_name` | Hostname the control plane is served at. The certificate covers exactly this name. |
 | `cluster_admin_principal_arns` | IAM roles or users that may reach the Kubernetes API. |
 | `cluster_endpoint_public_access_cidrs` | Where those principals connect from. |
-| `oidc_issuer` / `oidc_audience` | Your identity provider, for admin UI logins. |
+| `oidc_issuer` / `oidc_audience` | Your identity provider. The API validates bearer tokens against these. |
+| `oidc_client_id` | The public single-page-app client the admin UI signs in with. |
 
 `cluster_admin_principal_arns` is the only path to the Kubernetes API — a
 principal not in this list cannot run `kubectl` regardless of its IAM
-permissions. Include the identity you will run steps 4–7 as. Use the role or user
+permissions. Include the identity you will run steps 5–8 as. Use the role or user
 ARN; EKS rejects the `arn:aws:sts::…:assumed-role/…` form that
 `aws sts get-caller-identity` prints.
 
@@ -97,17 +110,39 @@ terraform apply
 
 This takes 20–30 minutes; the EKS cluster and the RDS instance are most of it.
 
-### 3. Send Pontem two values
+### 3. Validate the certificate
+
+Skip this if you set `route53_zone_id` — the apply already created the validation
+record and waited for the certificate.
 
 ```bash
-terraform output aws_account_id
-terraform output cp_runtime_assumed_role_arn
+terraform output acm_validation_records
+```
+
+Create that record in your DNS. Do it now rather than later: the certificate stays
+in `PENDING_VALIDATION` until the record resolves, and the load balancer in step 7
+will not finish starting without an issued certificate. Validation usually
+completes within minutes of the record going live.
+
+```bash
+aws acm describe-certificate \
+  --certificate-arn "$(terraform output -raw acm_certificate_arn)" \
+  --query 'Certificate.Status'
+```
+
+### 4. Send Pontem two values
+
+```bash
+terraform output -raw aws_account_id
+terraform output -raw cp_runtime_assumed_role_arn
 ```
 
 Pontem returns a `gcp.wifAudience`, which authorizes these pods to pull published
-agent packages. The chart refuses to install until you have it.
+agent packages. Nothing checks that you substituted it — the chart rejects only an
+*empty* value, so an install that leaves the placeholder in place succeeds and then
+fails the first time a managed package is pulled.
 
-### 4. Point kubectl at the cluster
+### 5. Point kubectl at the cluster
 
 ```bash
 $(terraform output -raw update_kubeconfig_command)
@@ -118,7 +153,7 @@ kubectl get nodes
 launches nodes on demand. An error mentioning `Unauthorized` means the identity
 you are using is not in `cluster_admin_principal_arns`.
 
-### 5. Create the namespace, the Secret, and the IngressClass
+### 6. Create the namespace, the Secret, and the IngressClass
 
 ```bash
 kubectl create namespace "$(terraform output -raw namespace)"
@@ -134,14 +169,14 @@ terraform output -raw ingress_class_manifest | kubectl apply -f -
 To have External Secrets Operator maintain the Secret instead of creating it by
 hand, see [Delivering the secrets with ESO](#delivering-the-secrets-with-eso).
 
-### 6. Install the chart
+### 7. Install the chart
 
 ```bash
 terraform output -raw helm_values > values.yaml
 ```
 
 Open `values.yaml` and replace `REPLACE_ME_PONTEM_SUPPLIED` with the
-`gcp.wifAudience` from step 3. Everything else is filled in.
+`gcp.wifAudience` from step 4. Everything else is filled in.
 
 ```bash
 helm upgrade --install pontem-control <chart-reference-from-pontem> \
@@ -156,20 +191,7 @@ helm upgrade --install pontem-control <chart-reference-from-pontem> \
 
 Pontem supplies the chart reference, the two image repositories, and the tag.
 
-### 7. Validate the certificate and point DNS at the load balancer
-
-Skip the first half if you set `route53_zone_id` — the apply already created the
-validation record and waited for the certificate.
-
-```bash
-terraform output acm_validation_records
-```
-
-Create that record in your DNS. The certificate stays in `PENDING_VALIDATION`
-until it resolves, and the load balancer will not finish starting without an
-issued certificate.
-
-Then point `app_domain_name` at the load balancer:
+### 8. Point DNS at the load balancer
 
 ```bash
 kubectl get ingress -n "$(terraform output -raw namespace)"
@@ -183,10 +205,14 @@ record; TLS terminates at the load balancer with the ACM certificate.
 curl "$(terraform output -raw app_url)/health"
 ```
 
+Then open `$(terraform output -raw app_url)` and sign in. `/health` answering does
+not prove the admin UI works — it is a separate container with its own
+configuration, and a browser is the only thing that exercises it.
+
 ## Delivering the secrets with ESO
 
 External Secrets Operator reads the two secrets from Secrets Manager and keeps the
-Kubernetes Secret in sync, instead of you creating it in step 5. The IAM role and
+Kubernetes Secret in sync, instead of you creating it in step 6. The IAM role and
 Pod Identity association it needs already exist unless you set
 `enable_external_secrets_iam = false`.
 
@@ -196,10 +222,13 @@ Install the operator:
 helm repo add external-secrets https://charts.external-secrets.io
 helm upgrade --install external-secrets external-secrets/external-secrets \
   --namespace external-secrets --create-namespace \
-  --set installCRDs=true \
+  --version 2.8.0 \
   --set serviceAccount.name=external-secrets \
   --wait
 ```
+
+The version is pinned because the manifests below use the
+`external-secrets.io/v1` API, which the 2.x line serves.
 
 The service account name and namespace must stay as above; the Pod Identity
 association binds those exact names, and the controller gets no AWS credentials
@@ -247,16 +276,26 @@ EOF
 
 **Kubernetes upgrades.** Raise `kubernetes_version` and apply. The cluster's
 support type is `STANDARD`, so a version that leaves standard support is upgraded
-by AWS rather than billed at the extended-support rate.
+by AWS rather than billed at the extended-support rate. When AWS does that, the
+cluster is running a newer version than your configuration names, and the next
+plan proposes a downgrade that the API rejects — every apply fails until you raise
+`kubernetes_version` to what the cluster is actually on:
+
+```bash
+aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
+  --query 'cluster.version'
+```
 
 **Changing the hostname.** Change `app_domain_name` and apply. A new certificate
 is issued before the old one is removed. Re-run step 7 for the new name, and
 re-render `values.yaml` so `ingress.domain` matches.
 
-**Inputs that destroy data.** `name_prefix` replaces the cluster and the
-database. `db_name` and `db_user` replace the database. `vpc_cidr` and
-`availability_zone_count` replace the VPC and everything in it. Each input's
-description says so.
+**Inputs that destroy data.** `name_prefix` replaces the cluster and the database.
+`db_name` and `db_user` replace the database. `vpc_cidr` replaces the VPC and
+everything in it. Raising `availability_zone_count` is safe — it appends a subnet,
+NAT gateway, and route table per new zone and leaves the existing ones alone;
+lowering it destroys the highest-numbered zone's subnets. Each input's description
+says so.
 
 **The device JWT signing key.** Every enrolled device holds a JWT signed with it.
 Replacing the value in Secrets Manager invalidates all of them, and the devices
@@ -280,14 +319,20 @@ terraform import 'aws_eks_access_policy_association.auto_node' \
 using with `aws sts get-caller-identity`, and add the underlying role ARN, not the
 `assumed-role` form it prints.
 
-**The Ingress never gets an `ADDRESS`.** Most often the certificate is not
-`ISSUED` yet:
+**The Ingress never gets an `ADDRESS`.** Most often the certificate from step 3 is
+not `ISSUED` yet — check it with the command there.
+
+**The admin UI loads a blank page.** Its configuration is missing or wrong. The
+browser console shows `oidc mode requires ...`. Check what reached the container:
 
 ```bash
-aws acm describe-certificate \
-  --certificate-arn "$(terraform output -raw acm_certificate_arn)" \
-  --query 'Certificate.Status'
+kubectl exec -n "$(terraform output -raw namespace)" deploy/pontem-control-admin \
+  -- cat /usr/share/nginx/html/config.js
 ```
+
+Empty `oidcClientId` means `oidc_client_id` did not make it into `values.yaml`. A
+doubled scheme in `oidcIssuer` means `oidc_issuer` carried something other than a
+bare `https://host/`.
 
 **Pods run but the site returns 502.** The load balancer's health checks are
 failing. The chart values set `/health` for the api and `/healthz` for the admin
@@ -334,6 +379,9 @@ make goldens   # re-render the golden files after changing a template
 make docs      # regenerate the input/output tables in these READMEs
 ```
 
+Contributing needs Terraform 1.8 or newer, above the 1.6 the module itself
+requires: the tests use `mock_provider` (1.7) and `strcontains` (1.8).
+
 The tests use a mocked AWS provider and need no credentials.
 [`modules/chart_values`](modules/chart_values) holds the chart values and manifest
 rendering, split out so its tests can plan without a provider at all; its tests
@@ -346,14 +394,14 @@ values shape shows up as a reviewable diff.
 | Name | Version |
 | ---- | ------- |
 | terraform | >= 1.6.0 |
-| aws | ~> 5.70 |
+| aws | ~> 6.0 |
 | random | ~> 3.6 |
 
 ## Providers
 
 | Name | Version |
 | ---- | ------- |
-| aws | 5.100.0 |
+| aws | 6.57.1 |
 | random | 3.9.0 |
 
 ## Resources
@@ -420,7 +468,10 @@ values shape shows up as a reviewable diff.
 | app\_domain\_name | Hostname the control plane is served at, e.g. "pontem.example.com". The ACM certificate covers exactly this name, and it becomes the chart's ingress.domain. Changing it replaces the certificate only — safe, and the old one stays attached until the new one is issued. | `string` | n/a | yes |
 | cluster\_admin\_principal\_arns | IAM principal ARNs granted cluster-admin on the EKS cluster via access entries. This is the ONLY path to the Kubernetes API: the cluster-creator bootstrap flag is off deliberately (see eks.tf), so a principal absent from this list cannot run kubectl no matter what IAM permissions it holds. Include the principal that will run the install steps, or the install cannot proceed. | `list(string)` | n/a | yes |
 | cluster\_endpoint\_public\_access\_cidrs | CIDRs allowed to reach the public EKS API endpoint. There is no default on purpose: the internal Pontem stack this is distilled from leaves the endpoint world-open with a "tighten before prod" note, which is not a posture to ship to someone else. Use ["0.0.0.0/0"] only if you have decided that deliberately; the API is still IAM-gated, but so is everything an attacker would try against it. | `list(string)` | n/a | yes |
-| availability\_zone\_count | How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. CHANGING THIS REPLACES THE VPC's subnets. | `number` | `2` | no |
+| oidc\_audience | OIDC API audience the control plane validates access tokens against, and that the admin app requests tokens for. These must be the same value or the API rejects every token the UI sends. | `string` | n/a | yes |
+| oidc\_client\_id | Client ID of the public single-page-app client the admin UI signs in with. Needed only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy. | `string` | n/a | yes |
+| oidc\_issuer | OIDC issuer URL, e.g. "https://your-tenant.us.auth0.com/". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there. | `string` | n/a | yes |
+| availability\_zone\_count | How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them. | `number` | `2` | no |
 | cloudwatch\_log\_retention\_days | Retention for the EKS control-plane log group. The log group is created here rather than left to EKS, which would create it with never-expire retention and bill for it forever. | `number` | `90` | no |
 | db\_allocated\_storage | Initial RDS storage in GiB. Storage autoscaling is on (see db\_max\_allocated\_storage), so this is a starting point, not a ceiling. | `number` | `20` | no |
 | db\_backup\_retention\_period | Days of automated RDS backups. Also the window for point-in-time recovery, which is the only thing that recovers from a bad migration or a mistaken delete. Zero disables backups entirely. | `number` | `14` | no |
@@ -437,8 +488,6 @@ values shape shows up as a reviewable diff.
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. Keep this near the newest version EKS offers — the cluster's upgrade policy is STANDARD, so a version that leaves standard support gets auto-upgraded rather than billed at the extended-support premium. | `string` | `"1.36"` | no |
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE — the names are the resources' identity, so a new prefix means new resources and the old data is destroyed. Pick it once, before the first apply. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
-| oidc\_audience | OIDC API audience the control plane validates access tokens against. Rendered into the chart values as auth.oidc.audience. Not a secret. Leave empty to supply it through the application Secret instead. | `string` | `""` | no |
-| oidc\_issuer | OIDC issuer URL for user authentication, e.g. "https://your-tenant.us.auth0.com/". Rendered into the chart values as auth.oidc.issuer. Not a secret — it is public metadata your users' browsers fetch. Leave empty to supply it through the application Secret instead. | `string` | `""` | no |
 | pod\_identity\_service\_accounts | Service accounts in `namespace` bound to the control-plane runtime role. The chart's api and worker pods both need AWS credentials for tenant-secret storage. Add "mcp" only if you enable the mcp deployment (it is off unless you set mcp.host in the chart). | `list(string)` | <pre>[<br/>  "api",<br/>  "worker"<br/>]</pre> | no |
 | route53\_zone\_id | Route53 hosted zone ID for app\_domain\_name. Set it and the module creates the ACM validation records and waits for the certificate to be issued. Leave it null and the records are emitted as the acm\_validation\_records output for you to create wherever your DNS lives; no waiter is added in that case, because a waiter would block every future apply on a manual step. | `string` | `null` | no |
 | secret\_recovery\_window\_days | Secrets Manager recovery window for the secrets this module creates. AWS keeps a deleted secret NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with an "already scheduled for deletion" error until the window expires. That is the trade for being able to recover a secret you deleted by mistake; set it to 0 if you are repeatedly building and tearing down a trial stack. | `number` | `30` | no |

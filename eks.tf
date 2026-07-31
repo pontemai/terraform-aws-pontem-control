@@ -196,6 +196,8 @@ resource "aws_eks_access_entry" "auto_node" {
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = aws_iam_role.auto_node.arn
   type          = "EC2"
+
+  tags = local.tags
 }
 
 resource "aws_eks_access_policy_association" "auto_node" {

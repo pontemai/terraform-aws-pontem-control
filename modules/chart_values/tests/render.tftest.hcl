@@ -17,8 +17,10 @@ variables {
   db_name = "pontem"
   db_user = "app"
 
-  oidc_issuer   = "https://example.us.auth0.com/"
-  oidc_audience = "https://api.example.com"
+  oidc_issuer    = "https://example.us.auth0.com/"
+  oidc_audience  = "https://api.example.com"
+  oidc_client_id = "ExampleSpaClientId"
+  oidc_domain    = "example.us.auth0.com"
 }
 
 run "values_satisfy_the_chart_contract" {
@@ -121,6 +123,35 @@ run "values_satisfy_the_chart_contract" {
     error_message = "auth.oidc.audience must pass through as a plain value."
   }
 
+  # The admin UI is a single-page app. It reads none of this from the Secret, and
+  # it throws on startup if any of the three is empty — which presents as a blank
+  # page while every pod reports healthy and /health keeps answering, so nothing
+  # else in the install catches it.
+  assert {
+    condition     = yamldecode(output.helm_values).admin.auth0.clientId == "ExampleSpaClientId"
+    error_message = "admin.auth0.clientId must be rendered; without it the admin UI is a blank page and no pod reports unhealthy."
+  }
+
+  # The host alone, with no scheme: the admin container builds "https://<host>/"
+  # from it, so a scheme here yields "https://https://…" and a login redirect to
+  # nowhere.
+  assert {
+    condition     = yamldecode(output.helm_values).admin.auth0.domain == "example.us.auth0.com"
+    error_message = "admin.auth0.domain must be the bare host with no scheme or trailing slash."
+  }
+
+  # Same audience the API validates against. If these diverge the UI signs in
+  # successfully and then every API call it makes returns 401.
+  assert {
+    condition     = yamldecode(output.helm_values).admin.auth0.audience == yamldecode(output.helm_values).auth.oidc.audience
+    error_message = "admin.auth0.audience must equal auth.oidc.audience, or the API rejects every token the UI obtains."
+  }
+
+  assert {
+    condition     = yamldecode(output.helm_values).admin.authMode == "auth0"
+    error_message = "admin.authMode must be auth0; `local` is a development-only mode that bypasses authentication."
+  }
+
   # The chart refuses to install with wifAudience empty, so the default must be a
   # visible sentinel rather than "" — an empty string reads as "nothing to do".
   assert {
@@ -161,28 +192,6 @@ run "wif_audience_is_substitutable" {
   assert {
     condition     = yamldecode(output.helm_values).gcp.wifAudience == "//iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/aws-customer/providers/aws-eks"
     error_message = "wif_audience must render verbatim — the chart matches it against what GCP issued."
-  }
-}
-
-run "oidc_may_come_from_the_secret_instead" {
-  command = plan
-
-  variables {
-    oidc_issuer   = ""
-    oidc_audience = ""
-  }
-
-  # Empty is a legitimate configuration, not a broken one: the chart falls back
-  # to OIDC_ISSUER / OIDC_AUDIENCE from the Secret. It must render as an empty
-  # string rather than being omitted or rendering as the literal "null".
-  assert {
-    condition     = yamldecode(output.helm_values).auth.oidc.issuer == ""
-    error_message = "An unset oidc_issuer must render as an empty string, which the chart reads as `comes from the Secret`."
-  }
-
-  assert {
-    condition     = yamldecode(output.helm_values).auth.oidc.audience == ""
-    error_message = "An unset oidc_audience must render as an empty string."
   }
 }
 
