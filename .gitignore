@@ -1,0 +1,25 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# Not committed on purpose: this repo is a module, and a lock file here would
+# pin provider versions for every caller that vendored it rather than letting
+# their own root module resolve them.
+.terraform.lock.hcl
+
+# Variable files hold the account-specific inputs, and *.auto.tfvars would be
+# picked up silently by any apply in the directory.
+*.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+!modules/chart_values/tests/fixture.tfvars
+
+# Rendered from `terraform output -raw helm_values` during an install; contains
+# nothing secret, but it is generated, not source.
+values.yaml
+
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc
