@@ -1,0 +1,50 @@
+# chart_values
+
+Renders the pontem-control chart values and the `alb` IngressClass manifest from
+the resources the root module created. Not meant to be called directly — the root
+module passes its own outputs in.
+
+This is a separate module because it uses no provider. That makes the seam between
+this repo and the pontem-control chart the one thing here that can be asserted on
+in CI: `terraform test` plans it with no credentials and no network, and the
+[tests](tests/render.tftest.hcl) check the rendered output key by key against what
+the chart's `values.schema.json` and cross-field guards accept.
+
+`tests/golden_values.yaml` and `tests/golden_ingressclass.yaml` are the rendered
+output for the fixture inputs in that test file, and the tests assert against them
+byte for byte. A change to a template — including to its comments, which are the
+customer's explanation of the values — therefore shows up as a diff of the golden
+file in the pull request. Run `make goldens` from the repo root to re-render them.
+
+<!-- BEGIN_TF_DOCS -->
+## Requirements
+
+| Name | Version |
+| ---- | ------- |
+| terraform | >= 1.6.0 |
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+| ---- | ----------- | ---- | ------- | :------: |
+| acm\_certificate\_arn | ACM certificate ARN for app\_domain\_name, attached by the IngressClassParams rather than by a chart annotation. | `string` | n/a | yes |
+| app\_domain\_name | Hostname the control plane is served at; becomes ingress.domain. | `string` | n/a | yes |
+| aws\_region | Region the pods run in; becomes aws.region, used by the AWS secrets backend and the GCP federation. | `string` | n/a | yes |
+| db\_host | RDS endpoint hostname, no port. | `string` | n/a | yes |
+| db\_name | Application database name. | `string` | n/a | yes |
+| db\_port | RDS Postgres port. | `number` | n/a | yes |
+| db\_user | Application database user. | `string` | n/a | yes |
+| namespace | Namespace the chart is installed into. Not itself a chart value — it is rendered into the install commands the README quotes and keeps them consistent with the Pod Identity associations. | `string` | n/a | yes |
+| credentials\_secret\_name | Name of the Kubernetes Secret holding the application's secret environment; becomes credentials.existingSecret.name. | `string` | `"pontem-control"` | no |
+| oidc\_audience | OIDC API audience, rendered as auth.oidc.audience. Empty means the value arrives through the application Secret instead. | `string` | `""` | no |
+| oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer. Empty means the value arrives through the application Secret instead. | `string` | `""` | no |
+| wif\_audience | GCP Workload Identity Federation audience, rendered as gcp.wifAudience. Pontem issues this per customer once the AWS account and the control-plane runtime role ARN are known, so the default is a deliberately loud placeholder rather than an empty string — the chart refuses to install with it unset, and a sentinel is easier to spot in a diff than a blank. | `string` | `"REPLACE_ME_PONTEM_SUPPLIED"` | no |
+
+## Outputs
+
+| Name | Description |
+| ---- | ----------- |
+| helm\_values | Rendered pontem-control chart values for this deployment. |
+| ingress\_class\_manifest | The `alb` IngressClass and its IngressClassParams, as a manifest to apply with kubectl. |
+| namespace | Namespace the install targets. Echoed back so callers rendering install commands read it from one place. |
+<!-- END_TF_DOCS -->
