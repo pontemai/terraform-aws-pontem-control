@@ -2,18 +2,8 @@
 # JWT signing key. Both are generated here, so both live in Terraform state —
 # treat the state file as secret material and keep it in an encrypted backend.
 #
-# Two things a reader might expect here and will not find:
-#
-#   * The OIDC issuer and audience. They are public metadata your users'
-#     browsers already fetch, and the chart takes them as plain values
-#     (auth.oidc.*). Routing non-secrets through Secrets Manager would add two
-#     moving parts and buy nothing.
-#   * A tracing API key. Control-plane traces on a Pontem-operated stack go to
-#     Pontem's own Honeycomb with a shared key; it is not a backend you point at
-#     your own account, so a self-hosted stack leaves tracing off.
-#
-# Per-tenant secrets are not created here either — the application creates those
-# at runtime under the tenant-* prefixes, which is what identity.tf grants.
+# Per-tenant secrets are not created here; the application creates those at runtime
+# under the tenant-* prefixes that identity.tf grants.
 
 # The API signs device JWTs with this. The control plane's Ed25519 device
 # identity provider requires DEVICE_JWT_SIGNING_KEY to be the standard base64

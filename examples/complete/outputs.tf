@@ -1,7 +1,11 @@
 # Re-exported so the install commands in the README can read them from this root
-# with `terraform output`. Only the ones an install actually uses are here; the
-# module emits more (subnet ids, secret ARNs) for auditing and for the External
-# Secrets path.
+# with `terraform output`. The VPC id, the subnet ids, and the RDS endpoint stay in
+# the module — nothing in the install needs them.
+
+output "cluster_name" {
+  description = "EKS cluster name."
+  value       = module.pontem_control.cluster_name
+}
 
 output "update_kubeconfig_command" {
   description = "Points kubectl at the new cluster."

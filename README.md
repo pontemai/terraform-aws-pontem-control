@@ -137,9 +137,11 @@ terraform output -raw aws_account_id
 terraform output -raw cp_runtime_assumed_role_arn
 ```
 
-Pontem returns a `gcp.wifAudience`, which authorizes these pods to pull published
-agent packages. Nothing checks that you substituted it — the chart rejects only an
-*empty* value, so an install that leaves the placeholder in place succeeds and then
+Pontem returns an audience string that authorizes these pods to pull published
+agent packages. Set it as `wif_audience` in your root module and apply again.
+
+Nothing downstream checks that you did: the chart rejects only an *empty*
+audience, so leaving the default placeholder in place installs cleanly and then
 fails the first time a managed package is pulled.
 
 ### 5. Point kubectl at the cluster
@@ -174,8 +176,8 @@ hand, see [Delivering the secrets with ESO](#delivering-the-secrets-with-eso).
 terraform output -raw helm_values > values.yaml
 ```
 
-Open `values.yaml` and replace `REPLACE_ME_PONTEM_SUPPLIED` with the
-`gcp.wifAudience` from step 4. Everything else is filled in.
+Every value is filled in. If `gcp.wifAudience` still reads
+`REPLACE_ME_PONTEM_SUPPLIED`, go back to step 4.
 
 ```bash
 helm upgrade --install pontem-control <chart-reference-from-pontem> \
@@ -369,10 +371,9 @@ repeatedly.
 ## Development
 
 ```bash
-make check     # fmt, validate, tflint, terraform-docs drift, tests
-make test      # terraform test only
-make goldens   # re-render the golden files after changing a template
-make docs      # regenerate the input/output tables in these READMEs
+make check   # fmt, validate, tflint, terraform-docs drift, tests
+make test    # terraform test only
+make docs    # regenerate the input/output tables in these READMEs
 ```
 
 Contributing needs Terraform 1.8 or newer, above the 1.6 the module itself
@@ -380,9 +381,8 @@ requires: the tests use `mock_provider` (1.7) and `strcontains` (1.8).
 
 The tests use a mocked AWS provider and need no credentials.
 [`modules/chart_values`](modules/chart_values) holds the chart values and manifest
-rendering, split out so its tests can plan without a provider at all; its tests
-assert the rendered output against committed golden files, so a change to the
-values shape shows up as a reviewable diff.
+rendering, split out so its tests can plan without a provider at all and assert on
+the rendered output directly.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -479,8 +479,6 @@ values shape shows up as a reviewable diff.
 | db\_name | Application database name inside the instance. CHANGING THIS REPLACES THE DATABASE INSTANCE and destroys its data. | `string` | `"pontem"` | no |
 | db\_user | Postgres user the application authenticates as. This is the instance's master user, so it is created with the instance; CHANGING IT REPLACES THE DATABASE. | `string` | `"app"` | no |
 | enable\_external\_secrets\_iam | Create the IAM role and Pod Identity association that let External Secrets Operator read the two secrets this module creates, as an alternative to creating the Kubernetes Secret by hand. Both paths are in the README. If ESO is never installed, the role and association have no effect. | `bool` | `true` | no |
-| external\_secrets\_namespace | Namespace the External Secrets Operator controller runs in. Only used when enable\_external\_secrets\_iam is true; matches the ESO chart's own default. | `string` | `"external-secrets"` | no |
-| external\_secrets\_service\_account | Service account the External Secrets Operator controller runs as. Only used when enable\_external\_secrets\_iam is true; matches the ESO chart's own default. | `string` | `"external-secrets"` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
@@ -490,6 +488,7 @@ values shape shows up as a reviewable diff.
 | single\_nat\_gateway | Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
 | tags | Extra tags merged onto every resource this module creates, on top of its own Project/ManagedBy tags. | `map(string)` | `{}` | no |
 | vpc\_cidr | CIDR block for the dedicated VPC. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database. | `string` | `"10.0.0.0/16"` | no |
+| wif\_audience | GCP Workload Identity Federation audience, which Pontem issues once it has your account id and the control-plane runtime role ARN (both are outputs of this module). Until you set it, the rendered chart values carry the placeholder below; the chart rejects only an EMPTY audience, so an install that keeps the placeholder succeeds and then fails the first time a managed agent package is pulled. | `string` | `"REPLACE_ME_PONTEM_SUPPLIED"` | no |
 
 ## Outputs
 
@@ -500,26 +499,17 @@ values shape shows up as a reviewable diff.
 | app\_url | Where the control plane will answer once the chart is installed and DNS points app\_domain\_name at the ALB. |
 | aws\_account\_id | Account these resources were created in. Pontem pins the federation to this account as well as to the role below, so send both. |
 | aws\_region | Region these resources were created in, read from the provider. Needed by the External Secrets Operator store, which names its region explicitly. |
-| cluster\_endpoint | EKS API server endpoint. |
-| cluster\_name | EKS cluster name. |
-| cp\_runtime\_assumed\_role\_arn | SEND THIS ONE TO PONTEM, together with aws\_account\_id, to get your gcp.wifAudience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition must match. The iam::...:role/... form above will not match and the federation will silently deny. |
-| cp\_runtime\_role\_arn | IAM role ARN the api and worker pods assume via EKS Pod Identity. This is the role's own ARN — the form you use for IAM policies referring to it. |
+| cluster\_name | EKS cluster name, which aws eks commands take and which equals name\_prefix. |
+| cp\_runtime\_assumed\_role\_arn | Send this to Pontem with aws\_account\_id to get your wif\_audience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition matches; the arn:aws:iam::...:role/... form of the same role does not match, and the federation denies without saying why. |
 | db\_endpoint | RDS endpoint hostname, without the port. |
-| db\_name | Application database name. |
-| db\_password | Generated RDS password. Also stored in Secrets Manager (db\_password\_secret\_arn); this output exists so the install can create the Kubernetes Secret without a round trip through the AWS console. |
-| db\_password\_secret\_arn | Secrets Manager ARN of the database password, for the External Secrets Operator path. |
+| db\_password | Generated RDS password, also stored in Secrets Manager under db\_password\_secret\_name. Emitted here so the install can create the Kubernetes Secret without a round trip through the AWS console. |
 | db\_password\_secret\_name | Secrets Manager name of the database password. External Secrets refers to secrets by name, not ARN. |
-| db\_port | RDS Postgres port. |
-| db\_user | Application database user. |
 | device\_jwt\_signing\_key | Generated device-JWT signing key, standard base64 of 32 bytes. ROTATING THIS INVALIDATES EVERY ENROLLED DEVICE'S JWT. |
-| device\_jwt\_signing\_key\_secret\_arn | Secrets Manager ARN of the device-JWT signing key, for the External Secrets Operator path. |
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device-JWT signing key. External Secrets refers to secrets by name, not ARN. |
-| external\_secrets\_role\_arn | IAM role ARN for the External Secrets Operator controller, or null when enable\_external\_secrets\_iam is false. Nothing needs it at install time — Pod Identity binds it server-side — but it is here for auditing which role reads the boot secrets. |
 | helm\_values | Rendered pontem-control chart values for this deployment. Write it to a file with `terraform output -raw helm_values > values.yaml` and pass it to helm. |
 | ingress\_class\_manifest | The `alb` IngressClass and its IngressClassParams. Apply with `terraform output -raw ingress_class_manifest | kubectl apply -f -`. |
 | namespace | Namespace to install the chart into. The Pod Identity associations bind service accounts in this namespace, so `helm install -n` must match it. |
 | private\_subnet\_ids | Private subnet IDs. Nodes run here and the RDS subnet group spans them. |
-| public\_subnet\_ids | Public subnet IDs. Internet-facing load balancers land here, discovered by their kubernetes.io/role/elb tag. |
 | update\_kubeconfig\_command | Command that points kubectl at this cluster. Only principals listed in cluster\_admin\_principal\_arns can use the resulting context. |
-| vpc\_id | ID of the VPC this module created. |
+| vpc\_id | ID of the dedicated VPC. The join point for anything else you run in the same network. |
 <!-- END_TF_DOCS -->

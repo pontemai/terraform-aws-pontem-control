@@ -33,14 +33,8 @@ variable "db_user" {
   type        = string
 }
 
-variable "credentials_secret_name" {
-  description = "Name of the Kubernetes Secret holding the application's secret environment; becomes credentials.existingSecret.name."
-  type        = string
-  default     = "pontem-control"
-}
-
 variable "oidc_issuer" {
-  description = "OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation."
+  description = "OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. The admin app is configured with the host on its own, which is derived from this."
   type        = string
 }
 
@@ -54,13 +48,7 @@ variable "oidc_client_id" {
   type        = string
 }
 
-variable "oidc_domain" {
-  description = "Identity provider host with no scheme, e.g. \"your-tenant.us.auth0.com\", rendered as admin.auth0.domain. The admin container rebuilds \"https://<host>/\" from it, so a scheme here would produce a doubled one."
-  type        = string
-}
-
 variable "wif_audience" {
-  description = "GCP Workload Identity Federation audience, rendered as gcp.wifAudience. Pontem issues this per customer once the AWS account and the control-plane runtime role ARN are known, so the default is a deliberately loud placeholder rather than an empty string — the chart refuses to install with it unset, and a sentinel is easier to spot in a diff than a blank."
+  description = "GCP Workload Identity Federation audience, rendered as gcp.wifAudience."
   type        = string
-  default     = "REPLACE_ME_PONTEM_SUPPLIED"
 }

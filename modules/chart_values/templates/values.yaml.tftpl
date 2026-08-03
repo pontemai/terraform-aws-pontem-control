@@ -25,7 +25,7 @@ gcp:
 
 credentials:
   existingSecret:
-    name: ${credentials_secret_name}
+    name: pontem-control
 
 # How the API validates the bearer tokens it receives. Supplied as plain values
 # because none of this is secret.
@@ -92,7 +92,7 @@ admin:
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /healthz
 
-# Every other chart key is left at its default deliberately:
+# The unset chart keys most likely to raise a question, and why each stays unset:
 #
 #   observability  Fleet metrics and logs need a GCP backend these pods have no
 #                  identity for, so device telemetry endpoints stay off.
@@ -100,4 +100,5 @@ admin:
 #                  it is not a backend to point at your own account.
 #   agentCatalog   Set by Pontem alongside wifAudience if you are subscribing to
 #                  published agent versions.
-#   managedSync    Off until the GCP federation above is live.
+#   managedSync    Left off here: it cannot pull anything until gcp.wifAudience
+#                  above is a real value.

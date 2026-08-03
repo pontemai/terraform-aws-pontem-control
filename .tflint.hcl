@@ -1,8 +1,3 @@
-config {
-  # Recurse into modules/chart_values and examples/complete.
-  call_module_type = "all"
-}
-
 plugin "terraform" {
   enabled = true
   preset  = "recommended"

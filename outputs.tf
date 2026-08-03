@@ -16,20 +16,16 @@ module "chart_values" {
   oidc_issuer    = var.oidc_issuer
   oidc_audience  = var.oidc_audience
   oidc_client_id = var.oidc_client_id
-  oidc_domain    = local.oidc_domain
+  wif_audience   = var.wif_audience
 }
 
 # ----- Cluster access -----
 
 output "cluster_name" {
-  description = "EKS cluster name."
+  description = "EKS cluster name, which aws eks commands take and which equals name_prefix."
   value       = aws_eks_cluster.this.name
 }
 
-output "cluster_endpoint" {
-  description = "EKS API server endpoint."
-  value       = aws_eks_cluster.this.endpoint
-}
 
 output "update_kubeconfig_command" {
   description = "Command that points kubectl at this cluster. Only principals listed in cluster_admin_principal_arns can use the resulting context."
@@ -39,14 +35,10 @@ output "update_kubeconfig_command" {
 # ----- Network -----
 
 output "vpc_id" {
-  description = "ID of the VPC this module created."
+  description = "ID of the dedicated VPC. The join point for anything else you run in the same network."
   value       = aws_vpc.this.id
 }
 
-output "public_subnet_ids" {
-  description = "Public subnet IDs. Internet-facing load balancers land here, discovered by their kubernetes.io/role/elb tag."
-  value       = aws_subnet.public[*].id
-}
 
 output "private_subnet_ids" {
   description = "Private subnet IDs. Nodes run here and the RDS subnet group spans them."
@@ -60,25 +52,13 @@ output "db_endpoint" {
   value       = aws_db_instance.this.address
 }
 
-output "db_port" {
-  description = "RDS Postgres port."
-  value       = aws_db_instance.this.port
-}
 
-output "db_name" {
-  description = "Application database name."
-  value       = aws_db_instance.this.db_name
-}
 
-output "db_user" {
-  description = "Application database user."
-  value       = aws_db_instance.this.username
-}
 
 # ----- Secret material for the application's Kubernetes Secret -----
 
 output "db_password" {
-  description = "Generated RDS password. Also stored in Secrets Manager (db_password_secret_arn); this output exists so the install can create the Kubernetes Secret without a round trip through the AWS console."
+  description = "Generated RDS password, also stored in Secrets Manager under db_password_secret_name. Emitted here so the install can create the Kubernetes Secret without a round trip through the AWS console."
   value       = random_password.db.result
   sensitive   = true
 }
@@ -89,20 +69,12 @@ output "device_jwt_signing_key" {
   sensitive   = true
 }
 
-output "db_password_secret_arn" {
-  description = "Secrets Manager ARN of the database password, for the External Secrets Operator path."
-  value       = aws_secretsmanager_secret.db_password.arn
-}
 
 output "db_password_secret_name" {
   description = "Secrets Manager name of the database password. External Secrets refers to secrets by name, not ARN."
   value       = aws_secretsmanager_secret.db_password.name
 }
 
-output "device_jwt_signing_key_secret_arn" {
-  description = "Secrets Manager ARN of the device-JWT signing key, for the External Secrets Operator path."
-  value       = aws_secretsmanager_secret.device_jwt_signing_key.arn
-}
 
 output "device_jwt_signing_key_secret_name" {
   description = "Secrets Manager name of the device-JWT signing key. External Secrets refers to secrets by name, not ARN."
@@ -121,20 +93,12 @@ output "aws_region" {
   value       = local.region
 }
 
-output "cp_runtime_role_arn" {
-  description = "IAM role ARN the api and worker pods assume via EKS Pod Identity. This is the role's own ARN — the form you use for IAM policies referring to it."
-  value       = aws_iam_role.cp_runtime.arn
-}
 
 output "cp_runtime_assumed_role_arn" {
-  description = "SEND THIS ONE TO PONTEM, together with aws_account_id, to get your gcp.wifAudience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition must match. The iam::...:role/... form above will not match and the federation will silently deny."
+  description = "Send this to Pontem with aws_account_id to get your wif_audience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition matches; the arn:aws:iam::...:role/... form of the same role does not match, and the federation denies without saying why."
   value       = "arn:aws:sts::${local.account_id}:assumed-role/${aws_iam_role.cp_runtime.name}"
 }
 
-output "external_secrets_role_arn" {
-  description = "IAM role ARN for the External Secrets Operator controller, or null when enable_external_secrets_iam is false. Nothing needs it at install time — Pod Identity binds it server-side — but it is here for auditing which role reads the boot secrets."
-  value       = var.enable_external_secrets_iam ? aws_iam_role.eso[0].arn : null
-}
 
 # ----- DNS and TLS -----
 

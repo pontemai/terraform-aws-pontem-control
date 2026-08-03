@@ -2,18 +2,9 @@
 # at the ALB with this certificate, which the IngressClassParams manifest (see
 # the ingress_class_manifest output) attaches.
 #
-# Two paths, chosen by route53_zone_id:
-#
-#   set   - the validation records are created here and the apply waits for the
-#           certificate to reach ISSUED, so a successful apply means TLS works.
-#   null  - the records are emitted as the acm_validation_records output for you
-#           to create in whatever DNS you use. There is deliberately no waiter in
-#           this case: it would block THIS apply and every later one on a manual
-#           step outside Terraform's view.
-#
-# In the null case the certificate sits in PENDING_VALIDATION until the record
-# resolves. Nothing fails until the Ingress tries to attach it, at which point
-# the Ingress simply never gets an address — see the README's troubleshooting.
+# route53_zone_id decides whether this module validates the certificate itself or
+# hands the records back as an output; its description explains both paths and why
+# the null case deliberately adds no waiter.
 
 resource "aws_acm_certificate" "app" {
   domain_name       = var.app_domain_name
@@ -64,7 +55,7 @@ resource "aws_acm_certificate_validation" "app" {
 locals {
   # Read through the validation resource when there is one. It resolves to the
   # same ARN, but routing through it makes anything consuming the certificate —
-  # the IngressClassParams manifest above all — depend on the certificate
+  # most of all the IngressClassParams manifest — depend on the certificate
   # actually being ISSUED rather than merely existing.
   acm_certificate_arn = var.route53_zone_id == null ? aws_acm_certificate.app.arn : aws_acm_certificate_validation.app[0].certificate_arn
 }

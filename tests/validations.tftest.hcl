@@ -125,6 +125,19 @@ run "rejects_consecutive_hyphens_in_name_prefix" {
   expect_failures = [var.name_prefix]
 }
 
+run "rejects_name_prefix_inside_the_tenant_secret_grant" {
+  command = plan
+
+  variables {
+    name_prefix = "tenant"
+  }
+
+  # Not a naming nit: the pods hold GetSecretValue on secret:tenant-*, so this
+  # prefix would place the database password and the device signing key inside a
+  # grant the application already has.
+  expect_failures = [var.name_prefix]
+}
+
 run "rejects_domain_with_scheme" {
   command = plan
 

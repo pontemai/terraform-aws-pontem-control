@@ -1,10 +1,9 @@
-.PHONY: check fmt fmt-fix validate lint test docs docs-check goldens clean
+.PHONY: check fmt fmt-fix validate lint test docs docs-check
 
 TF_DIRS := . examples/complete modules/chart_values
 CHART_VALUES := modules/chart_values
-GOLDEN_STATE := .golden.tfstate
 
-# What CI runs. No AWS credentials are needed for any of it.
+# What CI runs.
 check: fmt validate lint docs-check test
 
 fmt:
@@ -45,20 +44,3 @@ docs-check:
 	terraform-docs -c .terraform-docs.yml --output-check examples/complete
 	terraform-docs -c .terraform-docs.yml --output-check $(CHART_VALUES)
 
-# Re-render the golden files. The chart_values module declares no provider, so it
-# can be applied directly with no credentials and no network.
-goldens:
-	terraform -chdir=$(CHART_VALUES) init -backend=false -input=false -upgrade >/dev/null
-	terraform -chdir=$(CHART_VALUES) apply -auto-approve -input=false \
-		-var-file=tests/fixture.tfvars -state=$(GOLDEN_STATE) >/dev/null
-	terraform -chdir=$(CHART_VALUES) output -state=$(GOLDEN_STATE) -raw helm_values \
-		> $(CHART_VALUES)/tests/golden_values.yaml
-	terraform -chdir=$(CHART_VALUES) output -state=$(GOLDEN_STATE) -raw ingress_class_manifest \
-		> $(CHART_VALUES)/tests/golden_ingressclass.yaml
-	rm -f $(CHART_VALUES)/$(GOLDEN_STATE) $(CHART_VALUES)/$(GOLDEN_STATE).backup
-	@echo "Golden files re-rendered. Review the diff before committing."
-
-clean:
-	rm -rf .terraform examples/complete/.terraform $(CHART_VALUES)/.terraform
-	rm -f .terraform.lock.hcl examples/complete/.terraform.lock.hcl $(CHART_VALUES)/.terraform.lock.hcl
-	rm -f $(CHART_VALUES)/$(GOLDEN_STATE) $(CHART_VALUES)/$(GOLDEN_STATE).backup

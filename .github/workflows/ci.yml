@@ -16,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The module itself needs only Terraform >= 1.6, but the tests use mock_provider
-  # (1.7+) and strcontains (1.8+).
+  # The module itself needs only Terraform >= 1.6; the tests need 1.8 for
+  # mock_provider and strcontains. The pin is just current stable.
   TERRAFORM_VERSION: 1.13.3
   TFLINT_VERSION: v0.64.0
   TERRAFORM_DOCS_VERSION: v0.24.0
@@ -48,8 +48,8 @@ jobs:
       - name: Formatting
         run: make fmt
 
-      # Validates the root module and the example, so a variable renamed in one
-      # and not the other fails here.
+      # Root module, example, and submodule, so a variable renamed in one and not
+      # the other fails here.
       - name: Validate
         run: make validate
 
@@ -63,6 +63,6 @@ jobs:
         run: make docs-check
 
       # Variable validations, a full mocked plan of the resource graph, and the
-      # rendered chart values against their golden files.
+      # chart_values submodule's rendering assertions.
       - name: Tests
         run: make test

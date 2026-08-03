@@ -9,7 +9,8 @@
 data "aws_iam_policy_document" "cluster_assume" {
   statement {
     effect = "Allow"
-    # Auto Mode requires TagSession alongside AssumeRole.
+    # TagSession alongside AssumeRole: Auto Mode tags the session it assumes this
+    # role with, and AssumeRole alone is rejected.
     actions = ["sts:AssumeRole", "sts:TagSession"]
 
     principals {
@@ -74,8 +75,8 @@ resource "aws_eks_cluster" "this" {
 
   # The security-relevant control-plane logs. `audit` is the one that matters
   # for after-the-fact questions about who changed what; controllerManager and
-  # scheduler are operational noise you can enable ad hoc if a scheduling
-  # problem needs them.
+  # scheduler are operational noise — add them to this list if a scheduling problem
+  # needs them.
   enabled_cluster_log_types = ["api", "audit", "authenticator"]
 
   # Auto-upgrade off standard support rather than paying the extended-support
@@ -84,11 +85,8 @@ resource "aws_eks_cluster" "this" {
     support_type = "STANDARD"
   }
 
-  # CreateCluster rejects Auto Mode with the self-managed add-on bootstrap
-  # enabled, since Auto Mode ships its own core components. This module always
-  # creates a fresh cluster, so there is deliberately no `ignore_changes` on
-  # this attribute — carrying one would mask a real diff on a field that is
-  # ForceNew.
+  # CreateCluster rejects Auto Mode with the self-managed add-on bootstrap enabled,
+  # since Auto Mode ships its own core components.
   bootstrap_self_managed_addons = false
 
   # Authorization is EKS access entries only; there is no aws-auth ConfigMap to
@@ -174,12 +172,10 @@ resource "aws_iam_role_policy_attachment" "auto_node_minimal" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodeMinimalPolicy"
 }
 
-# PullOnly, not ReadOnly. Verified against the live managed policies rather than
-# assumed: PullOnly grants ecr:GetAuthorizationToken, BatchGetImage,
-# GetDownloadUrlForLayer, and BatchImportUpstreamImage, which covers pulling
-# from a registry in another AWS account. ReadOnly grants the same auth-token
-# action plus eleven more the nodes never use. Getting this wrong presents as
-# images that never pull, and it looks like a registry-policy problem.
+# PullOnly, not ReadOnly: PullOnly's ecr:BatchImportUpstreamImage covers pulling
+# from a registry in another AWS account, which is what these nodes do, and it
+# grants nothing beyond pull. Getting this wrong presents as images that never
+# pull, and it reads as a registry-policy problem.
 resource "aws_iam_role_policy_attachment" "auto_node_ecr_pull" {
   role       = aws_iam_role.auto_node.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"

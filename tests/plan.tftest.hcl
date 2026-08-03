@@ -39,7 +39,7 @@ run "default_configuration" {
 
   assert {
     condition     = aws_db_instance.this.skip_final_snapshot == false
-    error_message = "A final snapshot must be taken on delete."
+    error_message = "A final snapshot must be taken on delete; without one a destroy leaves nothing to restore from."
   }
 
   assert {
@@ -49,12 +49,12 @@ run "default_configuration" {
 
   assert {
     condition     = aws_db_instance.this.storage_encrypted == true
-    error_message = "Database storage must be encrypted at rest."
+    error_message = "Database storage must be encrypted at rest; encryption cannot be turned on after the instance exists."
   }
 
   assert {
     condition     = aws_db_instance.this.publicly_accessible == false
-    error_message = "The database must never get a public address."
+    error_message = "The database must never get a public address; the security group is the only thing standing between it and the internet if it does."
   }
 
   assert {
@@ -81,7 +81,7 @@ run "default_configuration" {
 
   assert {
     condition     = aws_eks_cluster.this.access_config[0].authentication_mode == "API"
-    error_message = "Authorization must be access entries only — no aws-auth ConfigMap."
+    error_message = "Authorization must be access entries only; falling back to the aws-auth ConfigMap puts cluster access in a mutable in-cluster object this module does not manage."
   }
 
   assert {
@@ -113,8 +113,6 @@ run "default_configuration" {
 
   # ----- Subnet arithmetic -----
 
-  # Non-overlapping /20s, public from the bottom of the VPC block and private from
-  # the top, so adding an AZ appends rather than renumbering existing subnets.
   assert {
     condition     = aws_subnet.public[0].cidr_block == "10.0.0.0/20" && aws_subnet.public[1].cidr_block == "10.0.16.0/20"
     error_message = "Public subnet CIDRs must be consecutive /20s from the bottom of vpc_cidr."
@@ -164,6 +162,21 @@ run "default_configuration" {
     error_message = "The bound service accounts must be the bare names `api` and `worker`, which is what the chart creates — not `pontem-control-api`."
   }
 
+  # The region comes from the provider, and everything below is built from it. This
+  # also pins the mock: reading a different attribute than the mock supplies leaves
+  # the region a generated string and every assertion downstream of it vacuous.
+  assert {
+    condition     = aws_secretsmanager_secret.db_password.tags["ManagedBy"] == "terraform" && strcontains(output.update_kubeconfig_command, "--region us-east-1")
+    error_message = "The kubeconfig command must name the provider's region."
+  }
+
+  # The pods' grant covers secret:tenant-* and secret:registry-tenant-*; the boot
+  # secrets must fall outside it, which is what name_prefix's validation enforces.
+  assert {
+    condition     = !startswith(aws_secretsmanager_secret.db_password.name, "tenant") && !startswith(aws_secretsmanager_secret.db_password.name, "registry-tenant")
+    error_message = "The boot secrets must not sit inside the tenant-* prefixes the application pods can read."
+  }
+
   # ----- Secrets: exactly two, and named off name_prefix -----
 
   assert {
@@ -190,7 +203,7 @@ run "default_configuration" {
 
   assert {
     condition     = aws_acm_certificate.app.domain_name == "pontem.example.com"
-    error_message = "The certificate must cover exactly app_domain_name, which is also the chart's ingress.domain."
+    error_message = "The certificate must cover exactly app_domain_name; a mismatch with the chart's ingress.domain serves the wrong name and browsers reject it."
   }
 
   # ----- Log retention -----
@@ -198,22 +211,6 @@ run "default_configuration" {
   assert {
     condition     = aws_cloudwatch_log_group.cluster.retention_in_days == 90
     error_message = "The control-plane log group must be created here with finite retention; left to EKS it is created with never-expire retention and billed forever."
-  }
-}
-
-run "issuer_host_reaches_the_admin_app_lowercased" {
-  command = plan
-
-  variables {
-    oidc_issuer = "https://Example.US.auth0.com/"
-  }
-
-  # Hostnames are case-insensitive so a mixed-case issuer is legitimate, but the
-  # admin app compares the host it is given against what the provider returns, and
-  # the scheme and trailing slash must be gone because the container adds them back.
-  assert {
-    condition     = local.oidc_domain == "example.us.auth0.com"
-    error_message = "The issuer host handed to the admin app must be lowercased with the scheme and any trailing slash removed."
   }
 }
 

@@ -32,6 +32,7 @@ module "pontem_control" {
 | app\_url | Where the control plane will answer once DNS points at the load balancer. |
 | aws\_account\_id | Account these resources live in. |
 | aws\_region | Region these resources live in. |
+| cluster\_name | EKS cluster name. |
 | cp\_runtime\_assumed\_role\_arn | Session-stripped assumed-role ARN of the control-plane runtime role. Send this and aws\_account\_id to Pontem. |
 | db\_password | Database password, for the application Secret. |
 | db\_password\_secret\_name | Secrets Manager name of the database password, for the External Secrets path. |

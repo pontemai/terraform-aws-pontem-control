@@ -96,8 +96,8 @@ resource "aws_db_instance" "this" {
 
   backup_retention_period = var.db_backup_retention_period
 
-  # Automatic minor upgrades during the maintenance window. The alternative is
-  # an instance that quietly falls behind on security patches.
+  # Explicit rather than left to the provider default: the failure this prevents is
+  # an instance that quietly stops taking security patches.
   auto_minor_version_upgrade = true
 
   deletion_protection = var.db_deletion_protection

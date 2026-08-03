@@ -11,7 +11,7 @@ provider "aws" {
 module "pontem_control" {
   source = "../../"
 
-  # ----- Change these four -----
+  # ----- Required: change all of these -----
 
   # The hostname the control plane will be served at. You will point this at the
   # load balancer's address once the chart is installed.
@@ -41,14 +41,19 @@ module "pontem_control" {
 
   # ----- Optional -----
 
+  # Set this once Pontem sends it (step 4 of the README), then re-apply and
+  # re-render values.yaml. Left unset, the rendered values carry a placeholder that
+  # the chart accepts and the first managed-package pull rejects.
+  # wif_audience = "//iam.googleapis.com/projects/…/providers/aws-eks"
+
   # Set this to your hosted zone and the module creates the certificate
   # validation records and waits for the certificate to be issued, so a
   # successful apply means TLS is working. Leave it out and the records are
   # emitted for you to create wherever your DNS lives.
   # route53_zone_id = "Z0123456789ABCDEFGHIJ"
 
-  # The two inputs that move most of the monthly bill, and what each costs you in
-  # availability. See the README's Cost section.
+  # The two inputs that move most of the monthly bill; each trades away an AZ's
+  # worth of independence. The README's Cost section has the numbers.
   # single_nat_gateway = true
   # db_multi_az        = false
 

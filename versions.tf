@@ -6,7 +6,8 @@ terraform {
     # intersects with the constraints of the caller's root module and every other
     # module they use, and an over-tight pin here means "no available provider
     # matches all constraints" on someone else's `terraform init`. One major is the
-    # loosest constraint that still guarantees the attribute names below exist.
+    # loosest constraint that still guarantees the attribute names this module uses
+    # exist.
     aws = {
       source  = "hashicorp/aws"
       version = "~> 6.0"
@@ -19,16 +20,13 @@ terraform {
   }
 }
 
-# Deliberately no `kubernetes` / `helm` / `kubectl` providers, and no provider
-# block at all — the calling root supplies `provider "aws"`, which is also how
-# the region arrives.
+# No `kubernetes` / `helm` / `kubectl` providers, and no provider block at all —
+# the calling root supplies `provider "aws"`, which is also how the region arrives.
 #
-# The two in-cluster objects this module would otherwise create (the
-# pontem-control Secret and the `alb` IngressClass) are emitted as outputs you
-# apply with kubectl. That is not squeamishness about mixing providers: a
-# Kubernetes-flavoured provider must be configured from the cluster's endpoint,
-# and if the cluster ever plans a REPLACEMENT that endpoint is unknown at plan
-# time, so the provider errors before it can tell you why. Recovering means
-# `terraform state rm` on the in-cluster resources, applying the cluster, then
-# re-applying. That is a bad afternoon for us and an impossible one for someone
-# running this in an account we cannot see.
+# The `alb` IngressClass is emitted as a manifest output to apply with kubectl; the
+# pontem-control Secret is assembled from two value outputs by `kubectl create
+# secret` (see the README). Neither is a Terraform resource because a
+# Kubernetes-flavoured provider must be configured from the cluster endpoint, which
+# is unknown at plan time whenever the cluster plans a REPLACEMENT — the provider
+# then errors before it can say why, and recovery is `terraform state rm` on the
+# in-cluster resources, apply the cluster, re-apply.

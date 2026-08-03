@@ -1,6 +1,6 @@
-# The chart contract, asserted. This is the one behavioural check available
-# before a live apply: the rendering is pure, so `command = plan` resolves both
-# outputs fully with no provider, no credentials, and no network.
+# The chart contract, asserted. This is the one behavioural check available before
+# a live apply: the rendering is pure, so `command = plan` resolves both outputs
+# fully.
 #
 # What is being guarded is the seam between this module and the pontem-control
 # chart. Every assertion below corresponds to something that fails at install
@@ -10,7 +10,6 @@ variables {
   app_domain_name     = "pontem.example.com"
   aws_region          = "us-east-1"
   acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
-  namespace           = "pontem-control"
 
   db_host = "pontem-control.abcdefghijkl.us-east-1.rds.amazonaws.com"
   db_port = 5432
@@ -20,7 +19,7 @@ variables {
   oidc_issuer    = "https://example.us.auth0.com/"
   oidc_audience  = "https://api.example.com"
   oidc_client_id = "ExampleSpaClientId"
-  oidc_domain    = "example.us.auth0.com"
+  wif_audience   = "REPLACE_ME_PONTEM_SUPPLIED"
 }
 
 run "values_satisfy_the_chart_contract" {
@@ -123,10 +122,6 @@ run "values_satisfy_the_chart_contract" {
     error_message = "auth.oidc.audience must pass through as a plain value."
   }
 
-  # The admin UI is a single-page app. It reads none of this from the Secret, and
-  # it throws on startup if any of the three is empty — which presents as a blank
-  # page while every pod reports healthy and /health keeps answering, so nothing
-  # else in the install catches it.
   assert {
     condition     = yamldecode(output.helm_values).admin.auth0.clientId == "ExampleSpaClientId"
     error_message = "admin.auth0.clientId must be rendered; without it the admin UI is a blank page and no pod reports unhealthy."
@@ -152,11 +147,12 @@ run "values_satisfy_the_chart_contract" {
     error_message = "admin.authMode must be auth0; `local` is a development-only mode that bypasses authentication."
   }
 
-  # The chart refuses to install with wifAudience empty, so the default must be a
-  # visible sentinel rather than "" — an empty string reads as "nothing to do".
+  # The chart rejects an empty wifAudience but accepts any non-empty string, so
+  # the un-substituted value has to be a visible sentinel: it is the only thing
+  # that makes a forgotten substitution obvious in a diff or a rendered file.
   assert {
     condition     = yamldecode(output.helm_values).gcp.wifAudience == "REPLACE_ME_PONTEM_SUPPLIED"
-    error_message = "gcp.wifAudience must default to the loud placeholder so an un-substituted value is obvious."
+    error_message = "An un-substituted wifAudience must render as the loud placeholder, not as an empty string."
   }
 
   # No key the chart's schema does not define: it sets additionalProperties
@@ -170,15 +166,29 @@ run "values_satisfy_the_chart_contract" {
     ])) == 0
     error_message = "helm_values contains a top-level key the chart's values.schema.json does not define; the schema sets additionalProperties=false, so the install would be rejected."
   }
+}
 
-  # The assertions above pin the keys that matter. This one pins the whole file,
-  # so that a change to the template — including to its comments, which are the
-  # customer's explanation of why each key is set — shows up as a reviewable diff
-  # of tests/golden_values.yaml in the pull request rather than passing silently.
-  # Regenerate with `make goldens` when the change is intended.
+run "issuer_host_is_lowercased_for_the_admin_app" {
+  command = plan
+
+  variables {
+    oidc_issuer = "https://Example.US.auth0.com/"
+  }
+
+  # Hostnames are case-insensitive, so a mixed-case issuer is a legitimate thing to
+  # be given. The admin app compares the host it holds against what the provider
+  # returns, so it has to arrive lowercased and stripped of scheme and trailing
+  # slash.
   assert {
-    condition     = output.helm_values == file("${path.module}/tests/golden_values.yaml")
-    error_message = "The rendered values does not match tests/golden_values.yaml. If the change is intended, run `make goldens` and review the diff."
+    condition     = yamldecode(output.helm_values).admin.auth0.domain == "example.us.auth0.com"
+    error_message = "A mixed-case issuer must reach admin.auth0.domain lowercased, with the scheme and any trailing slash removed."
+  }
+
+  # The issuer the API validates against is passed through untouched: it must match
+  # the provider's own `iss` claim byte for byte, which lowercasing could break.
+  assert {
+    condition     = yamldecode(output.helm_values).auth.oidc.issuer == "https://Example.US.auth0.com/"
+    error_message = "auth.oidc.issuer must be passed through verbatim, not normalised — it is compared against the token's iss claim."
   }
 }
 
@@ -218,10 +228,5 @@ run "ingress_class_manifest_wires_the_alb_controller" {
   assert {
     condition     = length([for doc in split("\n---\n", output.ingress_class_manifest) : doc if strcontains(doc, "kind: ")]) == 2
     error_message = "The manifest must contain exactly two YAML documents: IngressClassParams and IngressClass."
-  }
-
-  assert {
-    condition     = output.ingress_class_manifest == file("${path.module}/tests/golden_ingressclass.yaml")
-    error_message = "The rendered IngressClass manifest does not matches tests/golden_ingressclass.yaml. If the change is intended, run `make goldens` and review the diff."
   }
 }

@@ -8,9 +8,14 @@
 # into something CI can check on a pull request. `terraform validate` alone does
 # not evaluate any of that.
 
+# Both attributes: the module reads `region`, and a mock that only set `name`
+# would leave `region` a provider-generated string, so anything built from it
+# (the kubeconfig command, the tenant-secret ARNs) would be asserted against
+# nonsense.
 mock_data "aws_region" {
   defaults = {
-    name = "us-east-1"
+    name   = "us-east-1"
+    region = "us-east-1"
   }
 }
 

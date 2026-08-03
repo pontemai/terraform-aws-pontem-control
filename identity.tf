@@ -5,25 +5,15 @@
 # ----------------------------------------------------------------------------
 # CROSS-REPO CONTRACT with the pontem-control Helm chart
 #
-# The associations below bind AWS roles to specific ServiceAccounts in a
-# specific namespace. They are matched by NAME, server-side, at pod start. If
-# these names drift from what the chart actually creates, nothing fails at
-# apply time and nothing fails at install time — the pods start, get no AWS
-# credentials, and then tenant-secret operations return 500 with AccessDenied
-# in the logs. In an account we cannot see, that is close to undebuggable from
-# our side, so the names are worth stating explicitly.
+# The associations below bind AWS roles to ServiceAccounts by NAME, server-side, at
+# pod start. If a name drifts from what the chart creates, nothing fails at apply
+# time and nothing fails at install time: the pods start, get no AWS credentials,
+# and tenant-secret operations return 500 with AccessDenied.
 #
-# Verified against helm/pontem-control in pontemai/pontem-mvp:
-#   * namespace           - values.yaml has no namespace key; the chart installs
-#                           into whatever `helm install -n` targets, so this is
-#                           var.namespace and the README uses the same value.
-#   * ServiceAccount names - the bare "api" and "worker", from
-#                           values.yaml serviceAccount.{api,worker}.name. NOT
-#                           "pontem-control-api": the chart uses the literal
-#                           names, and values-aws.yaml does not override them.
-#   * "mcp" is intentionally absent from the default: its Deployment and
-#                           ServiceAccount are gated on mcp.host, which is empty
-#                           unless you turn it on.
+# The names are the bare "api" and "worker" from values.yaml
+# serviceAccount.{api,worker}.name — NOT "pontem-control-api"; values-aws.yaml does
+# not override them. The chart has no namespace key, so it installs wherever
+# `helm install -n` points, which must be var.namespace.
 # ----------------------------------------------------------------------------
 
 # ----- Control-plane runtime role -----
@@ -72,9 +62,7 @@ resource "aws_iam_role" "cp_runtime" {
 #   DescribeSecret                  metadata and version listing
 #   DeleteSecret                    force-deleting a tenant's secret
 #
-# Resource-scoped to the two tenant-secret prefixes (locals.tf), which is what
-# keeps this role — the one the application pods hold — unable to read the
-# database password or the device signing key.
+# Resource-scoped to the two tenant-secret prefixes (locals.tf).
 data "aws_iam_policy_document" "cp_runtime" {
   statement {
     effect = "Allow"
@@ -114,9 +102,17 @@ resource "aws_eks_pod_identity_association" "cp_runtime" {
 
 # ----- External Secrets Operator role (optional) -----
 
-# For the ESO path in the README: instead of creating the application's
-# Kubernetes Secret by hand from this module's outputs, ESO reads the two boot
-# secrets from Secrets Manager and keeps the Kubernetes Secret in sync.
+# The ESO path in the README: rather than creating the application's Kubernetes
+# Secret by hand from this module's outputs, ESO reads the two secrets from
+# Secrets Manager and keeps the Kubernetes Secret in sync.
+
+locals {
+  # Fixed, not variables. The association binds these names server-side and the
+  # controller gets no AWS credentials under any others, so an override here has
+  # no correct value other than the one the README installs ESO with.
+  eso_namespace       = "external-secrets"
+  eso_service_account = "external-secrets"
+}
 
 data "aws_iam_policy_document" "eso_assume" {
   count = var.enable_external_secrets_iam ? 1 : 0
@@ -170,8 +166,8 @@ resource "aws_eks_pod_identity_association" "eso" {
   count = var.enable_external_secrets_iam ? 1 : 0
 
   cluster_name    = aws_eks_cluster.this.name
-  namespace       = var.external_secrets_namespace
-  service_account = var.external_secrets_service_account
+  namespace       = local.eso_namespace
+  service_account = local.eso_service_account
   role_arn        = aws_iam_role.eso[0].arn
 
   tags = local.tags

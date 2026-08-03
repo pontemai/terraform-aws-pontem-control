@@ -65,6 +65,15 @@ variable "name_prefix" {
     condition     = !can(regex("--", var.name_prefix))
     error_message = "name_prefix must not contain two consecutive hyphens — RDS rejects them in a database identifier."
   }
+
+  # The application pods hold secretsmanager:GetSecretValue on secret:tenant-* and
+  # secret:registry-tenant-* (identity.tf). A prefix starting with either token
+  # would put this module's own secrets inside that grant, handing the pods the
+  # database password and the device signing key.
+  validation {
+    condition     = !can(regex("^(registry-)?tenant", var.name_prefix))
+    error_message = "name_prefix must not begin with \"tenant\" or \"registry-tenant\": those prefixes name the per-tenant secrets the application pods can already read, so the module's own database password and signing key would fall inside that grant."
+  }
 }
 
 variable "tags" {
@@ -254,26 +263,11 @@ variable "enable_external_secrets_iam" {
   default     = true
 }
 
-variable "external_secrets_namespace" {
-  description = "Namespace the External Secrets Operator controller runs in. Only used when enable_external_secrets_iam is true; matches the ESO chart's own default."
-  type        = string
-  default     = "external-secrets"
-}
-
-variable "external_secrets_service_account" {
-  description = "Service account the External Secrets Operator controller runs as. Only used when enable_external_secrets_iam is true; matches the ESO chart's own default."
-  type        = string
-  default     = "external-secrets"
-}
-
 # ----- Your identity provider -----
 #
-# All three are required, and all three are public metadata your users' browsers
-# already fetch — none is a secret. Two consumers need them: the API validates
-# bearer tokens against the issuer and audience, and the admin single-page app
-# needs the issuer, audience, AND client id to start at all. Miss the client id
-# and the API works while the admin UI serves a blank page, so there is no
-# default for any of them.
+# All three are required and none is a secret — they are public metadata your users'
+# browsers already fetch. The API needs the issuer and audience; the admin
+# single-page app needs all three, which is why none has a default.
 
 variable "oidc_issuer" {
   description = "OIDC issuer URL, e.g. \"https://your-tenant.us.auth0.com/\". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there."
@@ -295,6 +289,12 @@ variable "oidc_audience" {
     condition     = length(var.oidc_audience) > 0
     error_message = "oidc_audience must be set."
   }
+}
+
+variable "wif_audience" {
+  description = "GCP Workload Identity Federation audience, which Pontem issues once it has your account id and the control-plane runtime role ARN (both are outputs of this module). Until you set it, the rendered chart values carry the placeholder below; the chart rejects only an EMPTY audience, so an install that keeps the placeholder succeeds and then fails the first time a managed agent package is pulled."
+  type        = string
+  default     = "REPLACE_ME_PONTEM_SUPPLIED"
 }
 
 variable "oidc_client_id" {

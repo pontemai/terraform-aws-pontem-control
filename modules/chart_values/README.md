@@ -10,11 +10,9 @@ in CI: `terraform test` plans it with no credentials and no network, and the
 [tests](tests/render.tftest.hcl) check the rendered output key by key against what
 the chart's `values.schema.json` and cross-field guards accept.
 
-`tests/golden_values.yaml` and `tests/golden_ingressclass.yaml` are the rendered
-output for the fixture inputs in that test file, and the tests assert against them
-byte for byte. A change to a template — including to its comments, which are the
-customer's explanation of the values — therefore shows up as a diff of the golden
-file in the pull request. Run `make goldens` from the repo root to re-render them.
+The templates in `templates/` are the rendered output, so a change to either one —
+including to the comments, which are the customer's explanation of the values —
+shows up directly in the pull request diff.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -36,10 +34,8 @@ file in the pull request. Run `make goldens` from the repo root to re-render the
 | db\_user | Application database user. | `string` | n/a | yes |
 | oidc\_audience | OIDC API audience, rendered as both auth.oidc.audience (the API's validation) and admin.auth0.audience (what the browser requests tokens for). One value, two consumers — they have to agree. | `string` | n/a | yes |
 | oidc\_client\_id | Public SPA client ID, rendered as admin.auth0.clientId. Browser-only. | `string` | n/a | yes |
-| oidc\_domain | Identity provider host with no scheme, e.g. "your-tenant.us.auth0.com", rendered as admin.auth0.domain. The admin container rebuilds "https://<host>/" from it, so a scheme here would produce a doubled one. | `string` | n/a | yes |
-| oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. | `string` | n/a | yes |
-| credentials\_secret\_name | Name of the Kubernetes Secret holding the application's secret environment; becomes credentials.existingSecret.name. | `string` | `"pontem-control"` | no |
-| wif\_audience | GCP Workload Identity Federation audience, rendered as gcp.wifAudience. Pontem issues this per customer once the AWS account and the control-plane runtime role ARN are known, so the default is a deliberately loud placeholder rather than an empty string — the chart refuses to install with it unset, and a sentinel is easier to spot in a diff than a blank. | `string` | `"REPLACE_ME_PONTEM_SUPPLIED"` | no |
+| oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. The admin app is configured with the host on its own, which is derived from this. | `string` | n/a | yes |
+| wif\_audience | GCP Workload Identity Federation audience, rendered as gcp.wifAudience. | `string` | n/a | yes |
 
 ## Outputs
 
