@@ -49,21 +49,6 @@ apply with `kubectl` in step 6.
 - From Pontem: a `gcp.wifAudience` value, and access to the container images and
   the chart. Steps 4 and 7 cover when you need each.
 
-## Cost
-
-At the defaults, in `us-east-1`, expect roughly **$400/month** before data
-transfer: the EKS control plane (~$73), the nodes Auto Mode launches for the
-default replica counts plus its management fee (~$135), two NAT gateways (~$66),
-Multi-AZ RDS on `db.t4g.medium` (~$100), a load balancer (~$16), and small change
-for secrets and logs. These are estimates; the
-[AWS pricing calculator](https://calculator.aws) gives exact numbers for your
-region.
-
-Two inputs account for most of it. `single_nat_gateway = true` drops one NAT
-gateway (~$33/month) and makes both AZs' outbound traffic depend on one AZ.
-`db_multi_az = false` roughly halves the database cost and turns an AZ failure
-into an outage plus a restore from backup.
-
 ## Install
 
 ### 1. Write your root module
