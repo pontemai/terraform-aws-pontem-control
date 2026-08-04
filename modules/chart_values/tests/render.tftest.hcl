@@ -1,6 +1,6 @@
 # The chart contract, asserted. This is the one behavioural check available before
-# a live apply: the rendering is pure, so `command = plan` resolves both outputs
-# fully.
+# a live apply: the rendering is pure, so `command = plan` fully resolves the
+# `helm_values` output.
 #
 # What is being guarded is the seam between this module and the pontem-control
 # chart. Every assertion below corresponds to something that fails at install
