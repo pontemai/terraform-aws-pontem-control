@@ -17,15 +17,16 @@ aws:
 awsTurnkey:
   enabled: true
   certificateArn: "${certificate_arn}"
-  databasePasswordSecretName: "${db_password_secret_name}"
+  dbPasswordSecretName: "${db_password_secret_name}"
   deviceJwtSigningKeySecretName: "${device_jwt_signing_key_secret_name}"
 
-external-secrets:
+externalSecretsOperator:
+  enabled: true
   serviceAccount:
     create: true
     name: external-secrets
 
-external-dns:
+externalDns:
   enabled: ${route53_zone_id != null}
   serviceAccount:
     create: true
@@ -37,6 +38,8 @@ external-dns:
     - ingress
   domainFilters:
     - "${app_domain_name}"
+  zoneIdFilters:
+    - "${route53_zone_id}"
   extraArgs:
     aws-zone-id-filter: "${route53_zone_id}"
   policy: sync

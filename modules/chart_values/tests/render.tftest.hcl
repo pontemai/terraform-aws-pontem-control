@@ -44,26 +44,30 @@ run "values_satisfy_the_chart_contract" {
     condition = try(yamldecode(output.helm_values).awsTurnkey == {
       enabled                       = true
       certificateArn                = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
-      databasePasswordSecretName    = "pontem-control-db-password"
+      dbPasswordSecretName          = "pontem-control-db-password"
       deviceJwtSigningKeySecretName = "pontem-control-device-jwt-signing-key"
     }, false)
     error_message = "awsTurnkey must enable the chart-owned AWS resources and identify the ACM certificate and both boot secrets."
   }
 
   assert {
-    condition = try(yamldecode(output.helm_values)["external-secrets"].serviceAccount == {
-      create = true
-      name   = "external-secrets"
+    condition = try(yamldecode(output.helm_values).externalSecretsOperator == {
+      enabled = true
+      serviceAccount = {
+        create = true
+        name   = "external-secrets"
+      }
     }, false)
-    error_message = "The bundled External Secrets Operator must create and use the external-secrets ServiceAccount."
+    error_message = "The bundled External Secrets Operator must be enabled and use the external-secrets ServiceAccount."
   }
 
   assert {
-    condition = try(yamldecode(output.helm_values)["external-dns"] == {
+    condition = try(yamldecode(output.helm_values).externalDns == {
       enabled       = true
       provider      = { name = "aws" }
       sources       = ["ingress"]
       domainFilters = ["pontem.example.com"]
+      zoneIdFilters = ["Z0123456789ABCDEFGHIJ"]
       extraArgs     = { "aws-zone-id-filter" = "Z0123456789ABCDEFGHIJ" }
       policy        = "sync"
       registry      = "txt"
@@ -204,7 +208,7 @@ run "values_satisfy_the_chart_contract" {
       "externalDatabase", "blobStorage", "agentCatalog", "secretsBackend",
       "observability", "tracing", "managedSync", "devicePurge", "serviceAccount",
       "api", "worker", "mcp", "admin", "ingress", "awsTurnkey",
-      "external-secrets", "external-dns",
+      "externalSecretsOperator", "externalDns",
     ])) == 0
     error_message = "helm_values contains a top-level key the chart's values.schema.json does not define; the schema sets additionalProperties=false, so the install would be rejected."
   }
@@ -218,7 +222,7 @@ run "route53_disabled_omits_external_dns_configuration" {
   }
 
   assert {
-    condition = try(yamldecode(output.helm_values)["external-dns"] == {
+    condition = try(yamldecode(output.helm_values).externalDns == {
       enabled = false
       serviceAccount = {
         create = true

@@ -14,23 +14,23 @@ variable "acm_certificate_arn" {
 }
 
 variable "cluster_name" {
-  description = "Stable EKS cluster name; becomes ExternalDNS's TXT owner ID."
+  description = "Stable EKS cluster name; becomes externalDns.txtOwnerId."
   type        = string
 }
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID. Null disables ExternalDNS."
+  description = "Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective aws-zone-id-filter argument. Null disables ExternalDNS."
   type        = string
   default     = null
 }
 
 variable "db_password_secret_name" {
-  description = "Secrets Manager name containing DATABASE_PASSWORD."
+  description = "Secrets Manager name containing DATABASE_PASSWORD; becomes awsTurnkey.dbPasswordSecretName."
   type        = string
 }
 
 variable "device_jwt_signing_key_secret_name" {
-  description = "Secrets Manager name containing DEVICE_JWT_SIGNING_KEY."
+  description = "Secrets Manager name containing DEVICE_JWT_SIGNING_KEY; becomes awsTurnkey.deviceJwtSigningKeySecretName."
   type        = string
 }
 
