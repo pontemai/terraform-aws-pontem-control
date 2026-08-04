@@ -189,9 +189,28 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
   --query 'cluster.version'
 ```
 
-**Changing the hostname.** Change `app_domain_name`, apply Terraform, regenerate
-`values.yaml`, and run the pinned Helm command again. If
-`route53_zone_id = null`, update both manual DNS records.
+**Changing the hostname or Route53 configuration.** Changes to
+`app_domain_name` or `route53_zone_id`, including setting
+`route53_zone_id = null`, require this order:
+
+1. Delete only the chart-owned Ingress before applying the Terraform change,
+   while any current ExternalDNS controller and IAM role are still active:
+
+   ```bash
+   kubectl delete ingress pontem-control \
+     --namespace "$(terraform output -raw namespace)"
+   ```
+
+2. If the current `route53_zone_id` is set, wait until the old application and
+   TXT ownership records are gone from that hosted zone. If it is null, remove
+   the old manual application and certificate-validation records.
+3. Change the inputs and run `terraform apply`. If the new
+   `route53_zone_id = null`, complete the manual certificate-validation steps in
+   Deploy step 1 before continuing.
+4. Regenerate `values.yaml` and run the pinned Helm command in Deploy step 4.
+   Helm recreates `ingress/pontem-control`. If `route53_zone_id = null`, create
+   the manual application record after the Ingress has an address, as described
+   in Deploy step 5.
 
 **Inputs that replace data-bearing resources.** Changing `name_prefix` replaces
 the cluster and database. Changing `db_name` or `db_user` replaces the database.
