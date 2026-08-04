@@ -79,6 +79,8 @@ the IAM role or user that will run the post-apply steps. EKS rejects the
 `arn:aws:sts::…:assumed-role/…` form printed by
 `aws sts get-caller-identity`.
 
+Terraform state contains the database password and device JWT signing key.
+
 Creating the EKS cluster and RDS instance usually takes 20 to 30 minutes.
 
 ## After Terraform applies

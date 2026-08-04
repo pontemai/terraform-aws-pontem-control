@@ -41,9 +41,9 @@ module "pontem_control" {
 
   # ----- Optional -----
 
-  # Set this once Pontem sends it (step 4 of the README), then re-apply and
-  # re-render values.yaml. Left unset, the rendered values carry a placeholder that
-  # the chart accepts and the first managed-package pull rejects.
+  # Set this once Pontem sends it; see "Send Pontem two values" in the README.
+  # Then re-apply and re-render values.yaml. Left unset, the rendered values carry
+  # a placeholder that the chart accepts and the first managed-package pull rejects.
   # wif_audience = "//iam.googleapis.com/projects/…/providers/aws-eks"
 
   # Set this to your hosted zone and the module creates the certificate
@@ -53,7 +53,7 @@ module "pontem_control" {
   # route53_zone_id = "Z0123456789ABCDEFGHIJ"
 
   # The two inputs that move most of the monthly bill; each trades away an AZ's
-  # worth of independence. The README's Cost section has the numbers.
+  # worth of independence.
   # single_nat_gateway = true
   # db_multi_az        = false
 
