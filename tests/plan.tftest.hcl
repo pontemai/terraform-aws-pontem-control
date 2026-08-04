@@ -364,11 +364,8 @@ run "route53_zone_creates_records_and_waits" {
             }
           },
           {
-            Effect = "Allow"
-            Action = [
-              "route53:ListResourceRecordSets",
-              "route53:ListTagsForResources",
-            ]
+            Effect   = "Allow"
+            Action   = ["route53:ListResourceRecordSets"]
             Resource = ["arn:aws:route53:::hostedzone/Z0123456789ABCDEFGHIJ"]
           },
           {
@@ -380,7 +377,7 @@ run "route53_zone_creates_records_and_waits" {
       },
       false,
     )
-    error_message = "ExternalDNS may change only A/AAAA/CNAME and ownership TXT records for app_domain_name in the selected hosted zone; list access must not grant writes."
+    error_message = "ExternalDNS may change only A/AAAA/CNAME and ownership TXT records for app_domain_name in the selected hosted zone; read access must be exactly ListHostedZones and ListResourceRecordSets."
   }
 }
 

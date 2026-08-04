@@ -242,7 +242,7 @@ EKS cluster security group.
 Delete the Ingress while ExternalDNS is still running:
 
 ```bash
-kubectl delete ingress --all \
+kubectl delete ingress pontem-control \
   --namespace "$(terraform output -raw namespace)"
 ```
 
