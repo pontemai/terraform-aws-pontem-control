@@ -10,6 +10,11 @@ variables {
   app_domain_name     = "pontem.example.com"
   aws_region          = "us-east-1"
   acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
+  cluster_name        = "pontem-control"
+  route53_zone_id     = "Z0123456789ABCDEFGHIJ"
+
+  db_password_secret_name            = "pontem-control-db-password"
+  device_jwt_signing_key_secret_name = "pontem-control-device-jwt-signing-key"
 
   db_host = "pontem-control.abcdefghijkl.us-east-1.rds.amazonaws.com"
   db_port = 5432
@@ -33,6 +38,42 @@ run "values_satisfy_the_chart_contract" {
   assert {
     condition     = yamldecode(output.helm_values).aws.region == "us-east-1"
     error_message = "aws.region must be the region the resources were created in — the secrets backend and the GCP federation both read it."
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values).awsTurnkey == {
+      enabled                       = true
+      certificateArn                = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
+      databasePasswordSecretName    = "pontem-control-db-password"
+      deviceJwtSigningKeySecretName = "pontem-control-device-jwt-signing-key"
+    }, false)
+    error_message = "awsTurnkey must enable the chart-owned AWS resources and identify the ACM certificate and both boot secrets."
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values)["external-secrets"].serviceAccount == {
+      create = true
+      name   = "external-secrets"
+    }, false)
+    error_message = "The bundled External Secrets Operator must create and use the external-secrets ServiceAccount."
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values)["external-dns"] == {
+      enabled       = true
+      provider      = { name = "aws" }
+      sources       = ["ingress"]
+      domainFilters = ["pontem.example.com"]
+      extraArgs     = { "aws-zone-id-filter" = "Z0123456789ABCDEFGHIJ" }
+      policy        = "sync"
+      registry      = "txt"
+      txtOwnerId    = "pontem-control"
+      serviceAccount = {
+        create = true
+        name   = "external-dns"
+      }
+    }, false)
+    error_message = "The bundled ExternalDNS values must be limited to this ingress hostname and Route53 zone with stable TXT ownership."
   }
 
   assert {
@@ -68,7 +109,7 @@ run "values_satisfy_the_chart_contract" {
 
   assert {
     condition     = yamldecode(output.helm_values).ingress.className == "alb"
-    error_message = "ingress.className must be alb to select the IngressClass the ingress_class_manifest output creates."
+    error_message = "ingress.className must be alb to select the IngressClass the turnkey chart creates."
   }
 
   assert {
@@ -162,9 +203,29 @@ run "values_satisfy_the_chart_contract" {
       "image", "version", "credentials", "cloudProvider", "aws", "gcp", "auth",
       "externalDatabase", "blobStorage", "agentCatalog", "secretsBackend",
       "observability", "tracing", "managedSync", "devicePurge", "serviceAccount",
-      "api", "worker", "mcp", "admin", "ingress",
+      "api", "worker", "mcp", "admin", "ingress", "awsTurnkey",
+      "external-secrets", "external-dns",
     ])) == 0
     error_message = "helm_values contains a top-level key the chart's values.schema.json does not define; the schema sets additionalProperties=false, so the install would be rejected."
+  }
+}
+
+run "route53_disabled_omits_external_dns_configuration" {
+  command = plan
+
+  variables {
+    route53_zone_id = null
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values)["external-dns"] == {
+      enabled = false
+      serviceAccount = {
+        create = true
+        name   = "external-dns"
+      }
+    }, false)
+    error_message = "Without a Route53 zone, ExternalDNS must be disabled and no DNS settings may be rendered."
   }
 }
 
@@ -202,31 +263,5 @@ run "wif_audience_is_substitutable" {
   assert {
     condition     = yamldecode(output.helm_values).gcp.wifAudience == "//iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/aws-customer/providers/aws-eks"
     error_message = "wif_audience must render verbatim — the chart matches it against what GCP issued."
-  }
-}
-
-run "ingress_class_manifest_wires_the_alb_controller" {
-  command = plan
-
-  assert {
-    condition     = strcontains(output.ingress_class_manifest, "controller: eks.amazonaws.com/alb")
-    error_message = "The IngressClass must name Auto Mode's built-in ALB controller."
-  }
-
-  assert {
-    condition     = strcontains(output.ingress_class_manifest, "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555")
-    error_message = "The IngressClassParams must carry the ACM certificate ARN; TLS terminates at the ALB with it."
-  }
-
-  assert {
-    condition     = strcontains(output.ingress_class_manifest, "scheme: internet-facing")
-    error_message = "The ALB must be internet-facing; an internal scheme gives a load balancer no user can reach."
-  }
-
-  # Both documents must be present and separated, or `kubectl apply -f -` gets
-  # one object and the IngressClass references parameters that do not exist.
-  assert {
-    condition     = length([for doc in split("\n---\n", output.ingress_class_manifest) : doc if strcontains(doc, "kind: ")]) == 2
-    error_message = "The manifest must contain exactly two YAML documents: IngressClassParams and IngressClass."
   }
 }

@@ -34,12 +34,9 @@ module "pontem_control" {
 | aws\_region | Region these resources live in. |
 | cluster\_name | EKS cluster name. |
 | cp\_runtime\_assumed\_role\_arn | Session-stripped assumed-role ARN of the control-plane runtime role. Send this and aws\_account\_id to Pontem. |
-| db\_password | Database password, for the application Secret. |
-| db\_password\_secret\_name | Secrets Manager name of the database password, for the External Secrets path. |
-| device\_jwt\_signing\_key | Device JWT signing key, for the application Secret. |
-| device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device JWT signing key, for the External Secrets path. |
+| db\_password\_secret\_name | Secrets Manager name of the database password. |
+| device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device JWT signing key. |
 | helm\_values | Chart values for this deployment. |
-| ingress\_class\_manifest | The alb IngressClass and its parameters, to apply with kubectl. |
 | namespace | Namespace to install the chart into. |
 | update\_kubeconfig\_command | Points kubectl at the new cluster. |
 <!-- END_TF_DOCS -->

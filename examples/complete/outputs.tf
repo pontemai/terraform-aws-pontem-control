@@ -22,23 +22,6 @@ output "helm_values" {
   value       = module.pontem_control.helm_values
 }
 
-output "ingress_class_manifest" {
-  description = "The alb IngressClass and its parameters, to apply with kubectl."
-  value       = module.pontem_control.ingress_class_manifest
-}
-
-output "db_password" {
-  description = "Database password, for the application Secret."
-  value       = module.pontem_control.db_password
-  sensitive   = true
-}
-
-output "device_jwt_signing_key" {
-  description = "Device JWT signing key, for the application Secret."
-  value       = module.pontem_control.device_jwt_signing_key
-  sensitive   = true
-}
-
 output "acm_validation_records" {
   description = "DNS records to create by hand when route53_zone_id is not set. Empty otherwise."
   value       = module.pontem_control.acm_validation_records
@@ -61,12 +44,12 @@ output "aws_region" {
 }
 
 output "db_password_secret_name" {
-  description = "Secrets Manager name of the database password, for the External Secrets path."
+  description = "Secrets Manager name of the database password."
   value       = module.pontem_control.db_password_secret_name
 }
 
 output "device_jwt_signing_key_secret_name" {
-  description = "Secrets Manager name of the device JWT signing key, for the External Secrets path."
+  description = "Secrets Manager name of the device JWT signing key."
   value       = module.pontem_control.device_jwt_signing_key_secret_name
 }
 

@@ -150,6 +150,16 @@ run "rejects_domain_with_scheme" {
   expect_failures = [var.app_domain_name]
 }
 
+run "rejects_empty_route53_zone_id" {
+  command = plan
+
+  variables {
+    route53_zone_id = ""
+  }
+
+  expect_failures = [var.route53_zone_id]
+}
+
 run "rejects_unsupported_secret_recovery_window" {
   command = plan
 

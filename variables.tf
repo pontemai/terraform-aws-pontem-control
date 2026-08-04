@@ -233,9 +233,14 @@ variable "secret_recovery_window_days" {
 # ----- DNS / TLS -----
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID for app_domain_name. Set it and the module creates the ACM validation records and waits for the certificate to be issued. Leave it null and the records are emitted as the acm_validation_records output for you to create wherever your DNS lives; no waiter is added in that case, because a waiter would block every future apply on a manual step."
+  description = "Route53 hosted zone ID for app_domain_name. Set it to automate ACM validation and enable ExternalDNS with a Pod Identity role scoped to this zone and hostname. Leave it null to disable ExternalDNS and emit acm_validation_records for you to create wherever your DNS lives."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.route53_zone_id == null || can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
+    error_message = "route53_zone_id must be null or a Route53 hosted zone ID beginning with Z."
+  }
 }
 
 # ----- Kubernetes-side contract -----
@@ -255,12 +260,6 @@ variable "pod_identity_service_accounts" {
     condition     = length(var.pod_identity_service_accounts) > 0
     error_message = "pod_identity_service_accounts must not be empty — with no association the pods get no AWS credentials and tenant-secret operations fail with AccessDenied."
   }
-}
-
-variable "enable_external_secrets_iam" {
-  description = "Create the IAM role and Pod Identity association that let External Secrets Operator read the two secrets this module creates, as an alternative to creating the Kubernetes Secret by hand. Both paths are in the README. If ESO is never installed, the role and association have no effect."
-  type        = bool
-  default     = true
 }
 
 # ----- Your identity provider -----

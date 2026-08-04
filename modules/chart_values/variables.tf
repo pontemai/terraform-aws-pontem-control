@@ -9,7 +9,28 @@ variable "aws_region" {
 }
 
 variable "acm_certificate_arn" {
-  description = "ACM certificate ARN for app_domain_name, attached by the IngressClassParams rather than by a chart annotation."
+  description = "ACM certificate ARN for app_domain_name; becomes awsTurnkey.certificateArn."
+  type        = string
+}
+
+variable "cluster_name" {
+  description = "Stable EKS cluster name; becomes ExternalDNS's TXT owner ID."
+  type        = string
+}
+
+variable "route53_zone_id" {
+  description = "Route53 hosted zone ID. Null disables ExternalDNS."
+  type        = string
+  default     = null
+}
+
+variable "db_password_secret_name" {
+  description = "Secrets Manager name containing DATABASE_PASSWORD."
+  type        = string
+}
+
+variable "device_jwt_signing_key_secret_name" {
+  description = "Secrets Manager name containing DEVICE_JWT_SIGNING_KEY."
   type        = string
 }
 

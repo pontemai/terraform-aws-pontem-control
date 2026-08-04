@@ -44,11 +44,8 @@ resource "aws_security_group" "db" {
 # it rotates only if the instance is renamed or moves region — never as a side
 # effect of an unrelated change elsewhere in the module.
 #
-# special = false is not laziness. This value gets pasted into a
-# `kubectl create secret --from-literal` command in the README, where a shell
-# metacharacter in the password is a quoting trap that produces a subtly wrong
-# secret and a database connection that fails authentication. 32 alphanumeric
-# characters is ~190 bits; nothing is given up.
+# RDS engines disagree on allowed punctuation; 32 alphanumeric characters avoid
+# that compatibility surface while retaining about 190 bits of entropy.
 resource "random_password" "db" {
   length  = 32
   special = false
