@@ -36,7 +36,8 @@ Three features are unavailable in a self-hosted AWS deployment:
 
 Two objects inside the cluster are not created by Terraform: the application's
 Secret and the `alb` IngressClass. Both come out as Terraform outputs that you
-apply with `kubectl` in step 6.
+apply with `kubectl` in [the Kubernetes bootstrap
+step](#4-create-the-namespace-the-secret-and-the-ingressclass).
 
 ## Requirements
 
@@ -47,55 +48,44 @@ apply with `kubectl` in step 6.
 - The AWS CLI, which `kubectl` calls to get a cluster token.
 - A region that offers EKS Auto Mode. The cluster create fails if yours does not.
 - From Pontem: a `gcp.wifAudience` value, and access to the container images and
-  the chart. Steps 4 and 7 cover when you need each.
+  the chart. See [Send Pontem two values](#2-send-pontem-two-values) and [Install
+  the chart](#5-install-the-chart).
 
-## Install
+## Usage
 
-### 1. Write your root module
-
-Copy [`examples/complete`](examples/complete), which lists what to change. The
-required inputs:
-
-| Input | What it is |
-|---|---|
-| `app_domain_name` | Hostname the control plane is served at. The certificate covers exactly this name. |
-| `cluster_admin_principal_arns` | IAM roles or users that may reach the Kubernetes API. |
-| `cluster_endpoint_public_access_cidrs` | Where those principals connect from. |
-| `oidc_issuer` / `oidc_audience` | Your identity provider. The API validates bearer tokens against these. |
-| `oidc_client_id` | The public single-page-app client the admin UI signs in with. |
-
-`cluster_admin_principal_arns` is the only path to the Kubernetes API — a
-principal not in this list cannot run `kubectl` regardless of its IAM
-permissions. Include the identity you will run steps 5–8 as. Use the role or user
-ARN; EKS rejects the `arn:aws:sts::…:assumed-role/…` form that
-`aws sts get-caller-identity` prints.
-
-There is no backend configuration in this repo. State for this stack contains the
-database password and the device JWT signing key. The usual answer is an S3
-bucket with versioning and a DynamoDB lock table:
+See [`examples/complete`](examples/complete) for a complete root module.
 
 ```hcl
-terraform {
-  backend "s3" {
-    bucket         = "your-terraform-state"
-    key            = "pontem-control/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "your-terraform-locks"
-    encrypt        = true
-  }
+module "pontem_control" {
+  source = "github.com/pontemai/terraform-aws-pontem-control"
+
+  app_domain_name = "pontem.example.com"
+
+  cluster_admin_principal_arns = [
+    "arn:aws:iam::123456789012:role/YourAdminRole",
+  ]
+  cluster_endpoint_public_access_cidrs = [
+    "203.0.113.0/24",
+  ]
+
+  oidc_issuer    = "https://your-tenant.us.auth0.com/"
+  oidc_audience  = "https://pontem.example.com"
+  oidc_client_id = "YourAuth0SpaClientId"
 }
 ```
 
-### 2. Apply
+`cluster_admin_principal_arns` is the only path to the Kubernetes API. Include
+the IAM role or user that will run the post-apply steps. EKS rejects the
+`arn:aws:sts::…:assumed-role/…` form printed by
+`aws sts get-caller-identity`.
 
-```bash
-terraform init
-terraform apply
-```
+Terraform state contains the database password and device JWT signing key.
 
-This takes 20–30 minutes; the EKS cluster and the RDS instance are most of it.
+Creating the EKS cluster and RDS instance usually takes 20 to 30 minutes.
 
-### 3. Validate the certificate
+## After Terraform applies
+
+### 1. Validate the certificate
 
 Skip this if you set `route53_zone_id` — the apply already created the validation
 record and waited for the certificate.
@@ -105,9 +95,10 @@ terraform output acm_validation_records
 ```
 
 Create that record in your DNS. Do it now rather than later: the certificate stays
-in `PENDING_VALIDATION` until the record resolves, and the load balancer in step 7
-will not finish starting without an issued certificate. Validation usually
-completes within minutes of the record going live.
+in `PENDING_VALIDATION` until the record resolves, and the load balancer in
+[Install the chart](#5-install-the-chart) will not finish starting without an
+issued certificate. Validation usually completes within minutes of the record
+going live.
 
 ```bash
 aws acm describe-certificate \
@@ -115,7 +106,7 @@ aws acm describe-certificate \
   --query 'Certificate.Status'
 ```
 
-### 4. Send Pontem two values
+### 2. Send Pontem two values
 
 ```bash
 terraform output -raw aws_account_id
@@ -129,7 +120,7 @@ Nothing downstream checks that you did: the chart rejects only an *empty*
 audience, so leaving the default placeholder in place installs cleanly and then
 fails the first time a managed package is pulled.
 
-### 5. Point kubectl at the cluster
+### 3. Point kubectl at the cluster
 
 ```bash
 $(terraform output -raw update_kubeconfig_command)
@@ -139,7 +130,7 @@ kubectl get namespaces
 `Unauthorized` here means the identity you are using is not in
 `cluster_admin_principal_arns`. Add it and apply.
 
-### 6. Create the namespace, the Secret, and the IngressClass
+### 4. Create the namespace, the Secret, and the IngressClass
 
 ```bash
 kubectl create namespace "$(terraform output -raw namespace)"
@@ -155,14 +146,15 @@ terraform output -raw ingress_class_manifest | kubectl apply -f -
 To have External Secrets Operator maintain the Secret instead of creating it by
 hand, see [Delivering the secrets with ESO](#delivering-the-secrets-with-eso).
 
-### 7. Install the chart
+### 5. Install the chart
 
 ```bash
 terraform output -raw helm_values > values.yaml
 ```
 
 Every value is filled in. If `gcp.wifAudience` still reads
-`REPLACE_ME_PONTEM_SUPPLIED`, go back to step 4.
+`REPLACE_ME_PONTEM_SUPPLIED`, return to [Send Pontem two
+values](#2-send-pontem-two-values).
 
 ```bash
 helm upgrade --install pontem-control <chart-reference-from-pontem> \
@@ -177,7 +169,7 @@ helm upgrade --install pontem-control <chart-reference-from-pontem> \
 
 Pontem supplies the chart reference, the two image repositories, and the tag.
 
-### 8. Point DNS at the load balancer
+### 6. Point DNS at the load balancer
 
 ```bash
 kubectl get ingress -n "$(terraform output -raw namespace)"
@@ -198,8 +190,9 @@ configuration, and a browser is the only thing that exercises it.
 ## Delivering the secrets with ESO
 
 External Secrets Operator reads the two secrets from Secrets Manager and keeps the
-Kubernetes Secret in sync, instead of you creating it in step 6. The IAM role and
-Pod Identity association it needs already exist unless you set
+Kubernetes Secret in sync, instead of [creating it
+directly](#4-create-the-namespace-the-secret-and-the-ingressclass). The IAM role
+and Pod Identity association it needs already exist unless you set
 `enable_external_secrets_iam = false`.
 
 Install the operator:
@@ -271,8 +264,9 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
 ```
 
 **Changing the hostname.** Change `app_domain_name` and apply. A new certificate
-is issued before the old one is removed. Re-run step 7 for the new name, and
-re-render `values.yaml` so `ingress.domain` matches.
+is issued before the old one is removed. Re-run [Install the
+chart](#5-install-the-chart) for the new name, and re-render `values.yaml` so
+`ingress.domain` matches.
 
 **Inputs that destroy data.** `name_prefix` replaces the cluster and the database.
 `db_name` and `db_user` replace the database. `vpc_cidr` replaces the VPC and
@@ -302,8 +296,9 @@ terraform import 'aws_eks_access_policy_association.auto_node' \
 using with `aws sts get-caller-identity`, and add the underlying role ARN, not the
 `assumed-role` form it prints.
 
-**The Ingress never gets an `ADDRESS`.** Most often the certificate from step 3 is
-not `ISSUED` yet — check it with the command there.
+**The Ingress never gets an `ADDRESS`.** Most often the certificate from [Validate
+the certificate](#1-validate-the-certificate) is not `ISSUED` yet — check it with
+the command there.
 
 **The admin UI loads a blank page.** Its configuration is missing or wrong. The
 browser console shows `oidc mode requires ...`. Check what reached the container:
