@@ -19,7 +19,7 @@ variable "cluster_name" {
 }
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective aws-zone-id-filter argument. Null disables ExternalDNS."
+  description = "Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective zone-id-filter argument. Null disables ExternalDNS."
   type        = string
   default     = null
 }

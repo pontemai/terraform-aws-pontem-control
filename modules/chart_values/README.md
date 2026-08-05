@@ -13,7 +13,7 @@ The template in `templates/` is the rendered output, including its operator-faci
 comments.
 
 `helm_values` sets `awsTurnkey.enabled: true` and
-`externalSecretsOperator.enabled: true`.
+`external-secrets.enabled: true`.
 `externalDns.enabled` follows `route53_zone_id`.
 
 <!-- BEGIN_TF_DOCS -->
@@ -41,7 +41,7 @@ comments.
 | oidc\_client\_id | Public SPA client ID, rendered as admin.auth0.clientId. Browser-only. | `string` | n/a | yes |
 | oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. The admin app is configured with the host on its own, which is derived from this. | `string` | n/a | yes |
 | wif\_audience | GCP Workload Identity Federation audience, rendered as gcp.wifAudience. | `string` | n/a | yes |
-| route53\_zone\_id | Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective aws-zone-id-filter argument. Null disables ExternalDNS. | `string` | `null` | no |
+| route53\_zone\_id | Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective zone-id-filter argument. Null disables ExternalDNS. | `string` | `null` | no |
 
 ## Outputs
 

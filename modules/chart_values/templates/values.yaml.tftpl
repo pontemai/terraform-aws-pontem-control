@@ -20,7 +20,7 @@ awsTurnkey:
   dbPasswordSecretName: "${db_password_secret_name}"
   deviceJwtSigningKeySecretName: "${device_jwt_signing_key_secret_name}"
 
-externalSecretsOperator:
+external-secrets:
   enabled: true
   serviceAccount:
     create: true
@@ -41,7 +41,7 @@ externalDns:
   zoneIdFilters:
     - "${route53_zone_id}"
   extraArgs:
-    aws-zone-id-filter: "${route53_zone_id}"
+    zone-id-filter: "${route53_zone_id}"
   policy: sync
   registry: txt
   txtOwnerId: "${cluster_name}"

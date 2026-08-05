@@ -41,7 +41,7 @@ hostname.
 - Terraform >= 1.6.
 - AWS credentials that can create IAM, VPC, EKS, RDS, ACM, Secrets Manager, and
   optional Route53 resources.
-- AWS CLI, kubectl, and Helm 3.
+- AWS CLI, kubectl, and Helm >= 3.17.
 - A region that offers EKS Auto Mode.
 - From Pontem: a `gcp.wifAudience`, access to the distribution registry, and a
   released chart version.
@@ -137,8 +137,23 @@ kubectl get namespaces
 
 ### 4. Install the pinned chart release
 
+If this cluster has a standalone `external-secrets` Helm release, uninstall it
+first:
+
+```bash
+helm uninstall external-secrets --namespace external-secrets
+```
+
+If the cluster already has the `pontem-control` `ExternalSecret` or the `alb`
+`IngressClass` and `IngressClassParams`, add `--take-ownership` to the Helm
+command below on its first run. Omit the flag after that upgrade succeeds.
+
 ```bash
 terraform output -raw helm_values > values.yaml
+
+aws ecr get-login-password --region us-east-1 \
+  | helm registry login --username AWS --password-stdin \
+      415039713698.dkr.ecr.us-east-1.amazonaws.com
 
 helm upgrade --install pontem-control \
   oci://415039713698.dkr.ecr.us-east-1.amazonaws.com/pontem/charts/pontem-control \
@@ -311,7 +326,7 @@ and `strcontains`.
 
 | Name | Version |
 | ---- | ------- |
-| aws | 6.57.1 |
+| aws | 6.58.0 |
 | random | 3.9.0 |
 
 ## Resources

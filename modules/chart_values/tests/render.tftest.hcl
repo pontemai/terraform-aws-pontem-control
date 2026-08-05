@@ -51,7 +51,7 @@ run "values_satisfy_the_chart_contract" {
   }
 
   assert {
-    condition = try(yamldecode(output.helm_values).externalSecretsOperator == {
+    condition = try(yamldecode(output.helm_values)["external-secrets"] == {
       enabled = true
       serviceAccount = {
         create = true
@@ -68,7 +68,7 @@ run "values_satisfy_the_chart_contract" {
       sources       = ["ingress"]
       domainFilters = ["pontem.example.com"]
       zoneIdFilters = ["Z0123456789ABCDEFGHIJ"]
-      extraArgs     = { "aws-zone-id-filter" = "Z0123456789ABCDEFGHIJ" }
+      extraArgs     = { "zone-id-filter" = "Z0123456789ABCDEFGHIJ" }
       policy        = "sync"
       registry      = "txt"
       txtOwnerId    = "pontem-control"
@@ -208,7 +208,7 @@ run "values_satisfy_the_chart_contract" {
       "externalDatabase", "blobStorage", "agentCatalog", "secretsBackend",
       "observability", "tracing", "managedSync", "devicePurge", "serviceAccount",
       "api", "worker", "mcp", "admin", "ingress", "awsTurnkey",
-      "externalSecretsOperator", "externalDns",
+      "external-secrets", "externalDns",
     ])) == 0
     error_message = "helm_values contains a top-level key the chart's values.schema.json does not define; the schema sets additionalProperties=false, so the install would be rejected."
   }
