@@ -180,12 +180,12 @@ resource "aws_iam_role_policy" "external_dns" {
         Condition = {
           "ForAllValues:StringEquals" = {
             "route53:ChangeResourceRecordSetsActions" = ["CREATE", "UPSERT", "DELETE"]
-            # ExternalDNS prefixes ownership records with the endpoint record type.
+            # The chart keeps ownership records below an app-domain zone apex.
             "route53:ChangeResourceRecordSetsNormalizedRecordNames" = [
               var.app_domain_name,
-              "a-${var.app_domain_name}",
-              "aaaa-${var.app_domain_name}",
-              "cname-${var.app_domain_name}",
+              "external-dns-a.${var.app_domain_name}",
+              "external-dns-aaaa.${var.app_domain_name}",
+              "external-dns-cname.${var.app_domain_name}",
             ]
             "route53:ChangeResourceRecordSetsRecordTypes" = ["A", "AAAA", "CNAME", "TXT"]
           }

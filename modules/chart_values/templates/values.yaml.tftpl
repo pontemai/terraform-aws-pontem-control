@@ -45,6 +45,7 @@ externalDns:
   policy: sync
   registry: txt
   txtOwnerId: "${cluster_name}"
+  txtPrefix: "external-dns-%%{record_type}."
 %{ endif }
 
 gcp:

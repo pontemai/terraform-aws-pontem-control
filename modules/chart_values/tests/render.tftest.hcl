@@ -72,6 +72,7 @@ run "values_satisfy_the_chart_contract" {
       policy        = "sync"
       registry      = "txt"
       txtOwnerId    = "pontem-control"
+      txtPrefix     = "external-dns-%%{record_type}."
       serviceAccount = {
         create = true
         name   = "external-dns"

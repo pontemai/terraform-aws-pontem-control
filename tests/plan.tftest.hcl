@@ -355,9 +355,9 @@ run "route53_zone_creates_records_and_waits" {
                 "route53:ChangeResourceRecordSetsActions" = ["CREATE", "UPSERT", "DELETE"]
                 "route53:ChangeResourceRecordSetsNormalizedRecordNames" = [
                   "pontem.example.com",
-                  "a-pontem.example.com",
-                  "aaaa-pontem.example.com",
-                  "cname-pontem.example.com",
+                  "external-dns-a.pontem.example.com",
+                  "external-dns-aaaa.pontem.example.com",
+                  "external-dns-cname.pontem.example.com",
                 ]
                 "route53:ChangeResourceRecordSetsRecordTypes" = ["A", "AAAA", "CNAME", "TXT"]
               }

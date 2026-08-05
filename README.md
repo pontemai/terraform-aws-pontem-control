@@ -164,6 +164,13 @@ helm upgrade --install pontem-control \
   --wait --timeout 10m
 ```
 
+If an older Route53-backed install has manual A, AAAA, or CNAME records for
+`app_domain_name`, ExternalDNS will not adopt them without TXT ownership data.
+After the `external-dns` Deployment is ready, either [import those
+records](https://kubernetes-sigs.github.io/external-dns/v0.21.0/docs/advanced/import-records/)
+or delete only those application records. ExternalDNS recreates deleted records
+and their TXT ownership records on its next sync.
+
 The chart version selects the matching control-plane and admin image tags.
 `--wait` covers controller and application workload readiness. ALB provisioning,
 DNS propagation, HTTP health, and browser sign-in complete afterward.
