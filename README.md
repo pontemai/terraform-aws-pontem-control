@@ -61,7 +61,7 @@ aws sts get-caller-identity
 If this prints an `arn:aws:sts::...:assumed-role/...` ARN, use the matching
 `arn:aws:iam::...:role/...` ARN in `cluster_admin_principal_arns`.
 
-## Configure
+## Configure Terraform
 
 Copy all files from [`examples/complete`](examples/complete) into a new Terraform
 root module. The example includes the AWS provider and the root outputs used by
@@ -119,7 +119,7 @@ aws acm describe-certificate \
 When `route53_zone_id` is set, Terraform creates the validation record and the
 apply waits for the certificate.
 
-### 2. Register workload identity and re-apply
+### 2. Register the AWS role with Pontem
 
 Send these values to Pontem:
 
@@ -138,7 +138,7 @@ terraform apply
 The default `REPLACE_ME_PONTEM_SUPPLIED` value allows installation, but managed
 package pulls fail until it is replaced.
 
-### 3. Configure kubeconfig
+### 3. Connect kubectl to the cluster
 
 ```bash
 $(terraform output -raw update_kubeconfig_command)
@@ -148,7 +148,7 @@ kubectl get namespaces
 If this returns `Unauthorized`, confirm that the active IAM role or user ARN is
 listed in `cluster_admin_principal_arns`.
 
-### 4. Install the pinned chart release
+### 4. Install the Helm chart
 
 ```bash
 terraform output -raw helm_values > values.yaml
@@ -221,9 +221,9 @@ does not.
 To connect the first device, open the in-product docs and follow **Tutorial:
 Onboard a Device**.
 
-## Day two
+## Maintenance
 
-**Kubernetes upgrades.** Raise `kubernetes_version` and apply. EKS may
+**Upgrade Kubernetes.** Raise `kubernetes_version` and apply. EKS may
 automatically move a cluster beyond the configured version after standard support
 ends. Check the running version with:
 
@@ -232,7 +232,7 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
   --query 'cluster.version'
 ```
 
-**Changing the hostname or Route53 configuration.** Changes to
+**Change the hostname or Route53 setup.** Changes to
 `app_domain_name` or `route53_zone_id`, including setting
 `route53_zone_id = null`, require this order:
 
@@ -255,12 +255,12 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
    the manual application record after the Ingress has an address, as described
    in Deploy step 6.
 
-**Inputs that replace data-bearing resources.** Changing `name_prefix` replaces
+**Changes that can destroy data.** Changing `name_prefix` replaces
 the cluster and database. Changing `db_name` or `db_user` replaces the database.
 Changing `vpc_cidr` replaces the VPC and its contents.
 
-**Device JWT signing key.** Replacing it invalidates enrolled-device JWTs; those
-devices must re-enroll.
+**Replace the device JWT signing key.** Replacing it invalidates enrolled-device
+JWTs; those devices must re-enroll.
 
 ## Troubleshooting
 
@@ -302,7 +302,7 @@ ServiceAccounts named `api` and `worker`.
 **Pods cannot reach the database.** The database admits connections only from the
 EKS cluster security group.
 
-## Destroy
+## Remove the deployment
 
 Delete the Ingress while ExternalDNS is still running:
 
