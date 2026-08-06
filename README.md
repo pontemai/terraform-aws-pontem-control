@@ -1,10 +1,8 @@
-# terraform-aws-pontem-control
+# Install Pontem in your AWS account
 
-Terraform for running the Pontem control plane in your own AWS account.
-
-> **Pontem-internal note — this repo is not customer-readable yet.** It is
-> private, and `terraform init` against a source a customer cannot read fails.
-> Do not send anyone here until the repo is public and licensed.
+This guide is for a platform engineer starting with an AWS account that has no
+Pontem resources. It ends when the first admin can sign in and see their
+organization. You do not need access to Pontem's application source.
 
 Terraform creates AWS resources and renders `helm_values`. One Helm release owns
 the controllers, application Secret, ingress resources, and workloads inside the
@@ -36,15 +34,35 @@ hostname.
 - Membership invite emails require a `RESEND_API_KEY` key in the application
   Secret.
 
-## Requirements
+## Before you start
 
 - Terraform >= 1.6.
-- AWS credentials that can create IAM, VPC, EKS, RDS, ACM, Secrets Manager, and
-  optional Route53 resources.
-- AWS CLI, kubectl, and Helm >= 3.17.
+- Git, AWS CLI, kubectl, and Helm >= 3.17.
+- AWS credentials that can create the resources listed above. Keep the IAM role
+  or user ARN behind those credentials; you will grant it access to Kubernetes.
 - A region that offers EKS Auto Mode.
-- From Pontem: a `gcp.wifAudience`, access to the distribution registry, and a
-  released chart version.
+- A hostname for the control plane and access to its DNS. A Route53 hosted zone
+  is optional; without one, you will create the certificate and application DNS
+  records yourself.
+- An OIDC issuer, API audience, and public SPA client ID. Allow
+  `https://<your-hostname>/admin/` as both a sign-in and sign-out redirect URI.
+  The client must allow the `offline_access` scope and refresh-token grant.
+- From Pontem: read access to this module, a released module version, access to
+  the distribution ECR registry, and a released chart version. Pontem supplies
+  `wif_audience` after the first Terraform apply.
+
+Pontem can also provide the AWS deployment requirements brief for a full list of
+resources, IAM actions, network paths, and shared duties. This guide keeps only
+the install steps.
+
+Confirm which AWS identity is active before you configure the module:
+
+```bash
+aws sts get-caller-identity
+```
+
+If this prints an `arn:aws:sts::...:assumed-role/...` ARN, use the matching
+`arn:aws:iam::...:role/...` ARN in `cluster_admin_principal_arns`.
 
 ## Configure
 
@@ -52,7 +70,7 @@ See [`examples/complete`](examples/complete) for a complete root module.
 
 ```hcl
 module "pontem_control" {
-  source = "github.com/pontemai/terraform-aws-pontem-control"
+  source = "github.com/pontemai/terraform-aws-pontem-control?ref=<module-version-from-pontem>"
 
   app_domain_name = "pontem.example.com"
 
@@ -71,6 +89,8 @@ module "pontem_control" {
   route53_zone_id = "Z0123456789ABCDEFGHIJ"
 }
 ```
+
+Use the module version Pontem gives you. Do not source the `develop` branch.
 
 `cluster_admin_principal_arns` is the only path to the Kubernetes API. Use IAM
 role or user ARNs, not the `arn:aws:sts::...:assumed-role/...` value printed by
@@ -175,7 +195,28 @@ The chart version selects the matching control-plane and admin image tags.
 `--wait` covers controller and application workload readiness. ALB provisioning,
 DNS propagation, HTTP health, and browser sign-in complete afterward.
 
-### 5. Verify the deployment
+### 5. Create the first organization
+
+A new database has no organization or admin. After the Helm command completes,
+create both from the API pod:
+
+```bash
+kubectl exec deploy/pontem-control-api \
+  --namespace "$(terraform output -raw namespace)" \
+  -c api -- \
+  uv run python -m pontem_control.scripts.bootstrap_tenant \
+  --tenant-name "<organization-name>" \
+  --slug "<organization-slug>" \
+  --extra-admin "<admin-email>" \
+  --no-gcp-binding
+```
+
+Repeat `--extra-admin` to add more admins. The command creates or reuses the
+organization and is safe to run again. It does not send email. Each pending
+admin invite is claimed when that email address first signs in through OIDC.
+`--no-gcp-binding` is required for this AWS install.
+
+### 6. Verify the deployment
 
 ```bash
 kubectl get externalsecret pontem-control \
@@ -197,10 +238,18 @@ After DNS resolves:
 curl "$(terraform output -raw app_url)/health"
 ```
 
-Open `app_url` in a browser to verify the admin sign-in flow; the API health
-endpoint does not exercise the admin container or OIDC configuration.
+Open `app_url` in a browser and sign in with an email passed to
+`--extra-admin`. The organization should appear after sign-in. This checks the
+admin container and OIDC configuration, which the API health endpoint does not.
+
+Pontem is now running. To connect the first device, open the in-product docs and
+follow **Tutorial: Onboard a Device**.
 
 ## Day two
+
+Use the README shipped with the Helm chart for chart values, upgrades, and
+operations. The generated inputs and outputs below remain the source for this
+Terraform module.
 
 **Kubernetes upgrades.** Raise `kubernetes_version` and apply. EKS may
 automatically move a cluster beyond the configured version after standard support
@@ -232,7 +281,7 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
 4. Regenerate `values.yaml` and run the pinned Helm command in Deploy step 4.
    Helm recreates `ingress/pontem-control`. If `route53_zone_id = null`, create
    the manual application record after the Ingress has an address, as described
-   in Deploy step 5.
+   in Deploy step 6.
 
 **Inputs that replace data-bearing resources.** Changing `name_prefix` replaces
 the cluster and database. Changing `db_name` or `db_user` replaces the database.
@@ -267,6 +316,9 @@ kubectl exec --namespace "$(terraform output -raw namespace)" \
   deploy/pontem-control-admin -- \
   cat /usr/share/nginx/html/admin/config.js
 ```
+
+**Sign-in succeeds but no organization appears.** Run Deploy step 5 with the
+same email address returned by the OIDC provider, then reload the admin UI.
 
 **The site returns 502 while pods are ready.** The ALB target groups use `/health`
 for the API and `/healthz` for the admin service.
