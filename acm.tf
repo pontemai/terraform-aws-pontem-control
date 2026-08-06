@@ -1,6 +1,6 @@
 # ACM certificate for the control-plane hostname, DNS-validated. TLS terminates
-# at the ALB with this certificate, which the IngressClassParams manifest (see
-# the ingress_class_manifest output) attaches.
+# at the ALB with this certificate, which helm_values passes to the chart's
+# IngressClassParams.
 #
 # route53_zone_id decides whether this module validates the certificate itself or
 # hands the records back as an output; its description explains both paths and why
@@ -54,8 +54,7 @@ resource "aws_acm_certificate_validation" "app" {
 
 locals {
   # Read through the validation resource when there is one. It resolves to the
-  # same ARN, but routing through it makes anything consuming the certificate —
-  # most of all the IngressClassParams manifest — depend on the certificate
+  # same ARN, but routing through it makes helm_values depend on the certificate
   # actually being ISSUED rather than merely existing.
   acm_certificate_arn = var.route53_zone_id == null ? aws_acm_certificate.app.arn : aws_acm_certificate_validation.app[0].certificate_arn
 }

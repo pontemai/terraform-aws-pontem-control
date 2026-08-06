@@ -6,52 +6,47 @@ Terraform for running the Pontem control plane in your own AWS account.
 > private, and `terraform init` against a source a customer cannot read fails.
 > Do not send anyone here until the repo is public and licensed.
 
-One module creates everything the control plane needs and emits the chart values
-and manifests to install onto it. It does not share a VPC, cluster, or database
-with anything else in the account.
-
-## What this deployment does not do
-
-Three features are unavailable in a self-hosted AWS deployment:
-
-- **No device metrics or logs.** The device metrics and logs endpoints, heartbeat
-  publishing, and the device logging-token broker are all off. Devices enroll,
-  receive configuration, and report status; their telemetry has nowhere to go.
-- **No tenant file storage.** The file endpoints answer 503.
-- **No membership invite emails**, unless you add a `RESEND_API_KEY` key to the
-  application Secret yourself.
+Terraform creates AWS resources and renders `helm_values`. One Helm release owns
+the controllers, application Secret, ingress resources, and workloads inside the
+cluster. Terraform does not use Kubernetes, Helm, kubectl, or local-exec
+providers or resources.
 
 ## What it creates
 
-- A VPC with public and private subnets in two availability zones, an internet
-  gateway, and one NAT gateway per AZ.
-- An EKS cluster in Auto Mode. AWS runs the nodes, the ALB ingress controller,
-  EBS storage, and the Pod Identity agent.
-- An RDS Postgres instance, Multi-AZ, reachable only from the cluster.
-- Two Secrets Manager secrets: the database password and the device JWT signing
-  key.
-- An ACM certificate for your hostname.
-- Two IAM roles assumed through EKS Pod Identity: one for the control-plane pods,
-  one for External Secrets Operator.
+- A dedicated VPC with public and private subnets in two availability zones.
+- An EKS Auto Mode cluster.
+- A private, Multi-AZ RDS Postgres instance.
+- Secrets Manager secrets for the database password and device JWT signing key.
+- An ACM certificate for `app_domain_name`.
+- EKS Pod Identity roles for the control-plane pods and External Secrets
+  Operator.
+- When `route53_zone_id` is set, an ExternalDNS Pod Identity role limited to that
+  hosted zone and `app_domain_name`.
 
-Two objects inside the cluster are not created by Terraform: the application's
-Secret and the `alb` IngressClass. Both come out as Terraform outputs that you
-apply with `kubectl` in [the Kubernetes bootstrap
-step](#4-create-the-namespace-the-secret-and-the-ingressclass).
+The Helm release installs External Secrets Operator, creates the application
+Secret from the two Secrets Manager secrets, and creates the `alb` IngressClass.
+When `route53_zone_id` is set, it also installs ExternalDNS for the application
+hostname.
+
+## Limits
+
+- Device metrics and logs are unavailable. Devices can enroll, receive
+  configuration, and report status.
+- Tenant file endpoints return 503.
+- Membership invite emails require a `RESEND_API_KEY` key in the application
+  Secret.
 
 ## Requirements
 
 - Terraform >= 1.6.
-- AWS credentials for an account where you can create IAM roles, VPCs, EKS
-  clusters, and RDS instances.
-- `kubectl` and `helm` 3.
-- The AWS CLI, which `kubectl` calls to get a cluster token.
-- A region that offers EKS Auto Mode. The cluster create fails if yours does not.
-- From Pontem: a `gcp.wifAudience` value, and access to the container images and
-  the chart. See [Send Pontem two values](#2-send-pontem-two-values) and [Install
-  the chart](#5-install-the-chart).
+- AWS credentials that can create IAM, VPC, EKS, RDS, ACM, Secrets Manager, and
+  optional Route53 resources.
+- AWS CLI, kubectl, and Helm >= 3.17.
+- A region that offers EKS Auto Mode.
+- From Pontem: a `gcp.wifAudience`, access to the distribution registry, and a
+  released chart version.
 
-## Usage
+## Configure
 
 See [`examples/complete`](examples/complete) for a complete root module.
 
@@ -68,37 +63,39 @@ module "pontem_control" {
     "203.0.113.0/24",
   ]
 
-  oidc_issuer    = "https://your-tenant.us.auth0.com/"
+  oidc_issuer    = "https://example.us.auth0.com/"
   oidc_audience  = "https://pontem.example.com"
-  oidc_client_id = "YourAuth0SpaClientId"
+  oidc_client_id = "YourOidcSpaClientId"
+
+  # Optional: enables automatic ACM validation and application DNS.
+  route53_zone_id = "Z0123456789ABCDEFGHIJ"
 }
 ```
 
-`cluster_admin_principal_arns` is the only path to the Kubernetes API. Include
-the IAM role or user that will run the post-apply steps. EKS rejects the
-`arn:aws:sts::…:assumed-role/…` form printed by
+`cluster_admin_principal_arns` is the only path to the Kubernetes API. Use IAM
+role or user ARNs, not the `arn:aws:sts::...:assumed-role/...` value printed by
 `aws sts get-caller-identity`.
 
 Terraform state contains the database password and device JWT signing key.
 
-Creating the EKS cluster and RDS instance usually takes 20 to 30 minutes.
+## Deploy
 
-## After Terraform applies
+### 1. Apply Terraform
 
-### 1. Validate the certificate
+```bash
+terraform init
+terraform apply
+```
 
-Skip this if you set `route53_zone_id` — the apply already created the validation
-record and waited for the certificate.
+The EKS cluster and RDS instance usually take 20 to 30 minutes to create.
+
+If `route53_zone_id = null`, create the DNS validation record returned here:
 
 ```bash
 terraform output acm_validation_records
 ```
 
-Create that record in your DNS. Do it now rather than later: the certificate stays
-in `PENDING_VALIDATION` until the record resolves, and the load balancer in
-[Install the chart](#5-install-the-chart) will not finish starting without an
-issued certificate. Validation usually completes within minutes of the record
-going live.
+Wait for the certificate to become `ISSUED` before installing the chart:
 
 ```bash
 aws acm describe-certificate \
@@ -106,183 +103,148 @@ aws acm describe-certificate \
   --query 'Certificate.Status'
 ```
 
-### 2. Send Pontem two values
+When `route53_zone_id` is set, Terraform creates the validation record and the
+apply waits for the certificate.
+
+### 2. Register workload identity and re-apply
+
+Send these values to Pontem:
 
 ```bash
 terraform output -raw aws_account_id
 terraform output -raw cp_runtime_assumed_role_arn
 ```
 
-Pontem returns an audience string that authorizes these pods to pull published
-agent packages. Set it as `wif_audience` in your root module and apply again.
+Set the returned audience as `wif_audience` in the root module, then update the
+rendered Helm values:
 
-Nothing downstream checks that you did: the chart rejects only an *empty*
-audience, so leaving the default placeholder in place installs cleanly and then
-fails the first time a managed package is pulled.
+```bash
+terraform apply
+```
 
-### 3. Point kubectl at the cluster
+The default `REPLACE_ME_PONTEM_SUPPLIED` value allows installation, but managed
+package pulls fail until it is replaced.
+
+### 3. Configure kubeconfig
 
 ```bash
 $(terraform output -raw update_kubeconfig_command)
 kubectl get namespaces
 ```
 
-`Unauthorized` here means the identity you are using is not in
-`cluster_admin_principal_arns`. Add it and apply.
+`Unauthorized` means the current AWS identity is absent from
+`cluster_admin_principal_arns`.
 
-### 4. Create the namespace, the Secret, and the IngressClass
+### 4. Install the pinned chart release
+
+If this cluster has a standalone `external-secrets` Helm release, uninstall it
+first:
 
 ```bash
-kubectl create namespace "$(terraform output -raw namespace)"
-
-kubectl create secret generic pontem-control \
-  --namespace "$(terraform output -raw namespace)" \
-  --from-literal=DATABASE_PASSWORD="$(terraform output -raw db_password)" \
-  --from-literal=DEVICE_JWT_SIGNING_KEY="$(terraform output -raw device_jwt_signing_key)"
-
-terraform output -raw ingress_class_manifest | kubectl apply -f -
+helm uninstall external-secrets --namespace external-secrets
 ```
 
-To have External Secrets Operator maintain the Secret instead of creating it by
-hand, see [Delivering the secrets with ESO](#delivering-the-secrets-with-eso).
-
-### 5. Install the chart
+If the cluster already has the `pontem-control` `ExternalSecret` or the `alb`
+`IngressClass` and `IngressClassParams`, add `--take-ownership` to the Helm
+command below on its first run. Omit the flag after that upgrade succeeds.
 
 ```bash
 terraform output -raw helm_values > values.yaml
-```
 
-Every value is filled in. If `gcp.wifAudience` still reads
-`REPLACE_ME_PONTEM_SUPPLIED`, return to [Send Pontem two
-values](#2-send-pontem-two-values).
+aws ecr get-login-password --region us-east-1 \
+  | helm registry login --username AWS --password-stdin \
+      415039713698.dkr.ecr.us-east-1.amazonaws.com
 
-```bash
-helm upgrade --install pontem-control <chart-reference-from-pontem> \
+helm upgrade --install pontem-control \
+  oci://415039713698.dkr.ecr.us-east-1.amazonaws.com/pontem/charts/pontem-control \
+  --version "<version-from-pontem>" \
   --namespace "$(terraform output -raw namespace)" \
-  -f values.yaml \
-  --set image.repository=<image-repository-from-pontem> \
-  --set image.tag=<tag> \
-  --set admin.image.repository=<admin-image-repository-from-pontem> \
-  --set admin.image.tag=<tag> \
+  --create-namespace \
+  --values values.yaml \
   --wait --timeout 10m
 ```
 
-Pontem supplies the chart reference, the two image repositories, and the tag.
+If an older Route53-backed install has manual A, AAAA, or CNAME records for
+`app_domain_name`, ExternalDNS will not adopt them without TXT ownership data.
+After the `external-dns` Deployment is ready, either [import those
+records](https://kubernetes-sigs.github.io/external-dns/v0.21.0/docs/advanced/import-records/)
+or delete only those application records. ExternalDNS recreates deleted records
+and their TXT ownership records on its next sync.
 
-### 6. Point DNS at the load balancer
+The chart version selects the matching control-plane and admin image tags.
+`--wait` covers controller and application workload readiness. ALB provisioning,
+DNS propagation, HTTP health, and browser sign-in complete afterward.
+
+### 5. Verify the deployment
 
 ```bash
-kubectl get ingress -n "$(terraform output -raw namespace)"
+kubectl get externalsecret pontem-control \
+  --namespace "$(terraform output -raw namespace)"
+kubectl get ingress \
+  --namespace "$(terraform output -raw namespace)"
 ```
 
-Create a CNAME from your hostname to the `ADDRESS` shown. If your DNS provider
-proxies traffic — Cloudflare's orange cloud, for example — turn that off for this
-record; TLS terminates at the load balancer with the ACM certificate.
+The ExternalSecret should report `SecretSynced`. Wait for the Ingress to show an
+address.
+
+When `route53_zone_id` is set, ExternalDNS creates the application record and its
+TXT ownership record. When `route53_zone_id = null`, create a DNS record for
+`app_domain_name` pointing to the Ingress address.
+
+After DNS resolves:
 
 ```bash
 curl "$(terraform output -raw app_url)/health"
 ```
 
-Then open `$(terraform output -raw app_url)` and sign in. `/health` answering does
-not prove the admin UI works — it is a separate container with its own
-configuration, and a browser is the only thing that exercises it.
-
-## Delivering the secrets with ESO
-
-External Secrets Operator reads the two secrets from Secrets Manager and keeps the
-Kubernetes Secret in sync, instead of [creating it
-directly](#4-create-the-namespace-the-secret-and-the-ingressclass). The IAM role
-and Pod Identity association it needs already exist unless you set
-`enable_external_secrets_iam = false`.
-
-Install the operator:
-
-```bash
-helm repo add external-secrets https://charts.external-secrets.io
-helm upgrade --install external-secrets external-secrets/external-secrets \
-  --namespace external-secrets --create-namespace \
-  --version 2.8.0 \
-  --set serviceAccount.name=external-secrets \
-  --wait
-```
-
-The 2.x line serves the `external-secrets.io/v1` API the manifests below use.
-
-Keep the service account name and namespace as above. The Pod Identity
-association binds those exact names, and under any others the controller gets no
-AWS credentials.
-
-Then apply the store and the secret:
-
-```bash
-cat <<EOF | kubectl apply -f -
-apiVersion: external-secrets.io/v1
-kind: ClusterSecretStore
-metadata:
-  name: aws-secrets-manager
-spec:
-  provider:
-    aws:
-      service: SecretsManager
-      region: $(terraform output -raw aws_region)
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: pontem-control
-  namespace: $(terraform output -raw namespace)
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: aws-secrets-manager
-    kind: ClusterSecretStore
-  target:
-    name: pontem-control
-    creationPolicy: Owner
-  data:
-    - secretKey: DATABASE_PASSWORD
-      remoteRef:
-        key: $(terraform output -raw db_password_secret_name)
-    - secretKey: DEVICE_JWT_SIGNING_KEY
-      remoteRef:
-        key: $(terraform output -raw device_jwt_signing_key_secret_name)
-EOF
-```
+Open `app_url` in a browser to verify the admin sign-in flow; the API health
+endpoint does not exercise the admin container or OIDC configuration.
 
 ## Day two
 
-**Kubernetes upgrades.** Raise `kubernetes_version` and apply. The cluster's
-support type is `STANDARD`, so a version that leaves standard support is upgraded
-by AWS rather than billed at the extended-support rate. When AWS does that, the
-cluster is running a newer version than your configuration names, and the next
-plan proposes a downgrade that the API rejects — every apply fails until you raise
-`kubernetes_version` to what the cluster is actually on:
+**Kubernetes upgrades.** Raise `kubernetes_version` and apply. EKS may
+automatically move a cluster beyond the configured version after standard support
+ends. Check the running version with:
 
 ```bash
 aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
   --query 'cluster.version'
 ```
 
-**Changing the hostname.** Change `app_domain_name` and apply. A new certificate
-is issued before the old one is removed. Re-run [Install the
-chart](#5-install-the-chart) for the new name, and re-render `values.yaml` so
-`ingress.domain` matches.
+**Changing the hostname or Route53 configuration.** Changes to
+`app_domain_name` or `route53_zone_id`, including setting
+`route53_zone_id = null`, require this order:
 
-**Inputs that destroy data.** `name_prefix` replaces the cluster and the database.
-`db_name` and `db_user` replace the database. `vpc_cidr` replaces the VPC and
-everything in it. Raising `availability_zone_count` appends a subnet, NAT gateway,
-and route table per new zone and leaves the existing ones alone; lowering it
-destroys the highest-numbered zone's subnets.
+1. Delete only the chart-owned Ingress before applying the Terraform change,
+   while any current ExternalDNS controller and IAM role are still active:
 
-**The device JWT signing key.** Every enrolled device holds a JWT signed with it.
-Replacing the value in Secrets Manager invalidates all of them, and the devices
-have to re-enroll.
+   ```bash
+   kubectl delete ingress pontem-control \
+     --namespace "$(terraform output -raw namespace)"
+   ```
+
+2. If the current `route53_zone_id` is set, wait until the old application and
+   TXT ownership records are gone from that hosted zone. If it is null, remove
+   the old manual application and certificate-validation records.
+3. Change the inputs and run `terraform apply`. If the new
+   `route53_zone_id = null`, complete the manual certificate-validation steps in
+   Deploy step 1 before continuing.
+4. Regenerate `values.yaml` and run the pinned Helm command in Deploy step 4.
+   Helm recreates `ingress/pontem-control`. If `route53_zone_id = null`, create
+   the manual application record after the Ingress has an address, as described
+   in Deploy step 5.
+
+**Inputs that replace data-bearing resources.** Changing `name_prefix` replaces
+the cluster and database. Changing `db_name` or `db_user` replaces the database.
+Changing `vpc_cidr` replaces the VPC and its contents.
+
+**Device JWT signing key.** Replacing it invalidates enrolled-device JWTs; those
+devices must re-enroll.
 
 ## Troubleshooting
 
-**`terraform apply` fails with `ResourceInUseException` on
-`aws_eks_access_entry.auto_node`.** EKS created the node access entry itself while
-enabling Auto Mode. Import it rather than retrying:
+**`terraform apply` reports `ResourceInUseException` for
+`aws_eks_access_entry.auto_node`.** Import the access resources created by EKS:
 
 ```bash
 terraform import 'aws_eks_access_entry.auto_node' \
@@ -291,62 +253,61 @@ terraform import 'aws_eks_access_policy_association.auto_node' \
   '<cluster-name>#<node-role-arn>#arn:aws:eks::aws:cluster-access-policy/AmazonEKSAutoNodePolicy'
 ```
 
-**`kubectl` returns `Unauthorized`.** The identity you are using is not in
-`cluster_admin_principal_arns`. Add it and apply. Check what you are actually
-using with `aws sts get-caller-identity`, and add the underlying role ARN, not the
-`assumed-role` form it prints.
+**The ExternalSecret does not report `SecretSynced`.** Confirm the release uses
+the namespace from `terraform output -raw namespace`; the External Secrets
+Operator Pod Identity association is bound to that namespace and the
+`external-secrets` ServiceAccount.
 
-**The Ingress never gets an `ADDRESS`.** Most often the certificate from [Validate
-the certificate](#1-validate-the-certificate) is not `ISSUED` yet — check it with
-the command there.
+**The Ingress never gets an address.** Confirm the ACM certificate is `ISSUED`.
 
-**The admin UI loads a blank page.** Its configuration is missing or wrong. The
-browser console shows `oidc mode requires ...`. Check what reached the container:
+**The admin UI is blank.** Inspect the browser console and the rendered config:
 
 ```bash
-kubectl exec -n "$(terraform output -raw namespace)" deploy/pontem-control-admin \
-  -- cat /usr/share/nginx/html/admin/config.js
+kubectl exec --namespace "$(terraform output -raw namespace)" \
+  deploy/pontem-control-admin -- \
+  cat /usr/share/nginx/html/admin/config.js
 ```
 
-Empty `oidcClientId` means `oidc_client_id` did not make it into `values.yaml`. A
-doubled scheme in `oidcIssuer` means `oidc_issuer` carried something other than a
-bare `https://host/`.
+**The site returns 502 while pods are ready.** The ALB target groups use `/health`
+for the API and `/healthz` for the admin service.
 
-**Pods run but the site returns 502.** The load balancer's health checks are
-failing. The chart values set `/health` for the api and `/healthz` for the admin
-UI; the default `/` is not served by either. Confirm those survived any edits to
-`values.yaml`.
+**Tenant secret operations return 500 with `AccessDenied`.** The chart namespace
+must match the Pod Identity associations in `namespace`; the API and worker use
+ServiceAccounts named `api` and `worker`.
 
-**Tenant secret operations return 500 with `AccessDenied` in the logs.** The Pod
-Identity association does not match where the chart is installed. The associations
-bind the service accounts `api` and `worker` in the namespace given by
-`namespace`; `helm install --namespace` must use the same one.
+**Pods cannot reach the database.** The database admits connections only from the
+EKS cluster security group.
 
-**Pods cannot reach the database.** The database admits only the cluster's
-security group, so moving the pods to another cluster or VPC breaks it.
+## Destroy
 
-## Destroying
-
-Delete the Ingress first:
+Delete the Ingress while ExternalDNS is still running:
 
 ```bash
-kubectl delete ingress --all -n "$(terraform output -raw namespace)"
+kubectl delete ingress pontem-control \
+  --namespace "$(terraform output -raw namespace)"
 ```
 
-It creates a load balancer Terraform does not know about, and AWS will not delete
-the VPC's subnets while that load balancer holds network interfaces in them.
+When `route53_zone_id` is set, wait until both the application record and its TXT
+ownership record are gone from Route53. When it is null, remove the manual DNS
+record. Then uninstall Helm:
 
-Then set `db_deletion_protection = false` and apply, since `terraform destroy`
-fails against a protected instance. A final snapshot named `<name_prefix>-final`
-is taken on delete. Tearing the stack down a second time in the same account
-fails until that snapshot is deleted or renamed, because RDS rejects a final
-snapshot identifier that already exists.
+```bash
+helm uninstall pontem-control \
+  --namespace "$(terraform output -raw namespace)" \
+  --wait
+```
 
-Secrets Manager reserves a deleted secret's name for
-`secret_recovery_window_days` (30 by default) and rejects re-creating it, so
-applying again inside that window fails on the secret names. Set
-`secret_recovery_window_days = 0` if you are building and tearing this down
-repeatedly.
+Set `db_deletion_protection = false`, apply that change, then destroy Terraform:
+
+```bash
+terraform apply
+terraform destroy
+```
+
+RDS takes a final snapshot named `<name_prefix>-final`. A later destroy using the
+same name fails until that snapshot is renamed or deleted. Secrets Manager keeps
+deleted names reserved for `secret_recovery_window_days`; use `0` for stacks that
+must be recreated immediately.
 
 ## Development
 
@@ -356,13 +317,8 @@ make test    # terraform test only
 make docs    # regenerate the input/output tables in these READMEs
 ```
 
-Contributing needs Terraform 1.8 or newer, above the 1.6 the module itself
-requires: the tests use `mock_provider` (1.7) and `strcontains` (1.8).
-
-The tests use a mocked AWS provider and need no credentials.
-[`modules/chart_values`](modules/chart_values) holds the chart values and manifest
-rendering, split out so its tests can plan without a provider at all and assert on
-the rendered output directly.
+Contributing requires Terraform 1.8 or newer because the tests use provider mocks
+and `strcontains`.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -377,7 +333,7 @@ the rendered output directly.
 
 | Name | Version |
 | ---- | ------- |
-| aws | 6.57.1 |
+| aws | 6.58.0 |
 | random | 3.9.0 |
 
 ## Resources
@@ -397,12 +353,15 @@ the rendered output directly.
 | [aws_eks_cluster.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_cluster) | resource |
 | [aws_eks_pod_identity_association.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_eks_pod_identity_association.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
+| [aws_eks_pod_identity_association.external_dns](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_iam_role.auto_node](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.cluster](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_role.external_dns](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
+| [aws_iam_role_policy.external_dns](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy_attachment.auto_node_ecr_pull](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.auto_node_minimal](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.cluster_block_storage](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
@@ -431,10 +390,8 @@ the rendered output directly.
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.cluster_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
-| [aws_iam_policy_document.cp_runtime_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
-| [aws_iam_policy_document.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
-| [aws_iam_policy_document.eso_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.node_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.pod_identity_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
 
 ## Inputs
@@ -458,12 +415,11 @@ the rendered output directly.
 | db\_multi\_az | Run the database as a Multi-AZ deployment with a synchronous standby. Roughly doubles the instance cost. False turns an AZ failure into an outage plus a restore from backup; the database is the control plane's only durable store. | `bool` | `true` | no |
 | db\_name | Application database name inside the instance. CHANGING THIS REPLACES THE DATABASE INSTANCE and destroys its data. | `string` | `"pontem"` | no |
 | db\_user | Postgres user the application authenticates as. This is the instance's master user, so it is created with the instance; CHANGING IT REPLACES THE DATABASE. | `string` | `"app"` | no |
-| enable\_external\_secrets\_iam | Create the IAM role and Pod Identity association that let External Secrets Operator read the two secrets this module creates, as an alternative to creating the Kubernetes Secret by hand. Both paths are in the README. If ESO is never installed, the role and association have no effect. | `bool` | `true` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
 | pod\_identity\_service\_accounts | Service accounts in `namespace` bound to the control-plane runtime role. The chart's api and worker pods both need AWS credentials for tenant-secret storage. Add "mcp" only if you enable the mcp deployment (it is off unless you set mcp.host in the chart). | `list(string)` | <pre>[<br/>  "api",<br/>  "worker"<br/>]</pre> | no |
-| route53\_zone\_id | Route53 hosted zone ID for app\_domain\_name. Set it and the module creates the ACM validation records and waits for the certificate to be issued. Leave it null and the records are emitted as the acm\_validation\_records output for you to create wherever your DNS lives; no waiter is added in that case, because a waiter would block every future apply on a manual step. | `string` | `null` | no |
+| route53\_zone\_id | Route53 hosted zone ID for app\_domain\_name. Set it to automate ACM validation and enable ExternalDNS with a Pod Identity role scoped to this zone and hostname. Leave it null to disable ExternalDNS and emit acm\_validation\_records for you to create wherever your DNS lives. | `string` | `null` | no |
 | secret\_recovery\_window\_days | Days a deleted secret stays recoverable. AWS keeps the deleted secret's NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with "already scheduled for deletion" until the window expires. 0 deletes immediately, which makes repeated build-and-tear-down cycles work. | `number` | `30` | no |
 | single\_nat\_gateway | Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
 | tags | Extra tags merged onto every resource this module creates, on top of its own Project/ManagedBy tags. | `map(string)` | `{}` | no |
@@ -482,12 +438,9 @@ the rendered output directly.
 | cluster\_name | EKS cluster name, which aws eks commands take and which equals name\_prefix. |
 | cp\_runtime\_assumed\_role\_arn | Send this to Pontem with aws\_account\_id to get your wif\_audience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition matches; the arn:aws:iam::...:role/... form of the same role does not match, and the federation denies without saying why. |
 | db\_endpoint | RDS endpoint hostname, without the port. |
-| db\_password | Generated RDS password, also stored in Secrets Manager under db\_password\_secret\_name. Emitted here so the install can create the Kubernetes Secret without a round trip through the AWS console. |
-| db\_password\_secret\_name | Secrets Manager name of the database password. External Secrets refers to secrets by name, not ARN. |
-| device\_jwt\_signing\_key | Generated device-JWT signing key, standard base64 of 32 bytes. ROTATING THIS INVALIDATES EVERY ENROLLED DEVICE'S JWT. |
-| device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device-JWT signing key. External Secrets refers to secrets by name, not ARN. |
+| db\_password\_secret\_name | Secrets Manager name of the database password rendered into helm\_values. |
+| device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device-JWT signing key rendered into helm\_values. |
 | helm\_values | Rendered pontem-control chart values for this deployment. Write it to a file with `terraform output -raw helm_values > values.yaml` and pass it to helm. |
-| ingress\_class\_manifest | The `alb` IngressClass and its IngressClassParams. Apply with `terraform output -raw ingress_class_manifest | kubectl apply -f -`. |
 | namespace | Namespace to install the chart into. The Pod Identity associations bind service accounts in this namespace, so `helm install -n` must match it. |
 | private\_subnet\_ids | Private subnet IDs. Nodes run here and the RDS subnet group spans them. |
 | update\_kubeconfig\_command | Command that points kubectl at this cluster. Only principals listed in cluster\_admin\_principal\_arns can use the resulting context. |

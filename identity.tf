@@ -29,7 +29,7 @@
 #      packages. Nothing extra is configured here — GCP trusts this role by ARN
 #      (see the cp_runtime_assumed_role_arn output).
 
-data "aws_iam_policy_document" "cp_runtime_assume" {
+data "aws_iam_policy_document" "pod_identity_assume" {
   statement {
     effect = "Allow"
     # Pod Identity requires TagSession alongside AssumeRole: the agent tags the
@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "cp_runtime_assume" {
 resource "aws_iam_role" "cp_runtime" {
   name               = "${var.name_prefix}-cp-runtime"
   description        = "Runtime identity for the pontem-control api/worker pods in ${var.name_prefix}, assumed via EKS Pod Identity: tenant-secret CRUD in Secrets Manager, and the AWS identity Pontem's GCP Workload Identity Federation provider trusts."
-  assume_role_policy = data.aws_iam_policy_document.cp_runtime_assume.json
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
 
   tags = local.tags
 }
@@ -100,75 +100,118 @@ resource "aws_eks_pod_identity_association" "cp_runtime" {
   tags = local.tags
 }
 
-# ----- External Secrets Operator role (optional) -----
+# ----- External Secrets Operator role -----
 
-# The ESO path in the README: rather than creating the application's Kubernetes
-# Secret by hand from this module's outputs, ESO reads the two secrets from
-# Secrets Manager and keeps the Kubernetes Secret in sync.
-
-locals {
-  # Fixed, not variables. The association binds these names server-side and the
-  # controller gets no AWS credentials under any others, so an override here has
-  # no correct value other than the one the README installs ESO with.
-  eso_namespace       = "external-secrets"
-  eso_service_account = "external-secrets"
+moved {
+  from = aws_iam_role.eso[0]
+  to   = aws_iam_role.eso
 }
 
-data "aws_iam_policy_document" "eso_assume" {
-  count = var.enable_external_secrets_iam ? 1 : 0
+moved {
+  from = aws_iam_role_policy.eso[0]
+  to   = aws_iam_role_policy.eso
+}
 
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole", "sts:TagSession"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["pods.eks.amazonaws.com"]
-    }
-  }
+moved {
+  from = aws_eks_pod_identity_association.eso[0]
+  to   = aws_eks_pod_identity_association.eso
 }
 
 resource "aws_iam_role" "eso" {
-  count = var.enable_external_secrets_iam ? 1 : 0
-
   name               = "${var.name_prefix}-external-secrets"
   description        = "External Secrets Operator controller in ${var.name_prefix}, assumed via EKS Pod Identity. Read-only on this module's two boot secrets."
-  assume_role_policy = data.aws_iam_policy_document.eso_assume[0].json
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
 
   tags = local.tags
 }
 
-# Scoped to the two secret ARNs by name rather than a ${name_prefix}-* wildcard.
-# With only two secrets there is no policy-churn argument for a wildcard, and
-# naming them means a third secret added later has to be granted deliberately.
-data "aws_iam_policy_document" "eso" {
-  count = var.enable_external_secrets_iam ? 1 : 0
-
-  statement {
-    effect  = "Allow"
-    actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [
-      aws_secretsmanager_secret.db_password.arn,
-      aws_secretsmanager_secret.device_jwt_signing_key.arn,
-    ]
-  }
-}
-
 resource "aws_iam_role_policy" "eso" {
-  count = var.enable_external_secrets_iam ? 1 : 0
-
-  name   = "${var.name_prefix}-external-secrets"
-  role   = aws_iam_role.eso[0].id
-  policy = data.aws_iam_policy_document.eso[0].json
+  name = "${var.name_prefix}-external-secrets"
+  role = aws_iam_role.eso.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret",
+      ]
+      Resource = [
+        aws_secretsmanager_secret.db_password.arn,
+        aws_secretsmanager_secret.device_jwt_signing_key.arn,
+      ]
+    }]
+  })
 }
 
 resource "aws_eks_pod_identity_association" "eso" {
-  count = var.enable_external_secrets_iam ? 1 : 0
+  cluster_name    = aws_eks_cluster.this.name
+  namespace       = var.namespace
+  service_account = "external-secrets"
+  role_arn        = aws_iam_role.eso.arn
+
+  tags = local.tags
+}
+
+# ----- ExternalDNS role -----
+
+resource "aws_iam_role" "external_dns" {
+  count = var.route53_zone_id == null ? 0 : 1
+
+  name               = "${var.name_prefix}-external-dns"
+  description        = "ExternalDNS controller in ${var.name_prefix}, assumed via EKS Pod Identity. DNS changes are limited to ${var.app_domain_name}."
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy" "external_dns" {
+  count = var.route53_zone_id == null ? 0 : 1
+
+  name = "${var.name_prefix}-external-dns"
+  role = aws_iam_role.external_dns[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["route53:ChangeResourceRecordSets"]
+        Resource = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+        Condition = {
+          "ForAllValues:StringEquals" = {
+            "route53:ChangeResourceRecordSetsActions" = ["CREATE", "UPSERT", "DELETE"]
+            # The chart keeps ownership records below an app-domain zone apex.
+            "route53:ChangeResourceRecordSetsNormalizedRecordNames" = [
+              var.app_domain_name,
+              "external-dns-a.${var.app_domain_name}",
+              "external-dns-aaaa.${var.app_domain_name}",
+              "external-dns-cname.${var.app_domain_name}",
+            ]
+            "route53:ChangeResourceRecordSetsRecordTypes" = ["A", "AAAA", "CNAME", "TXT"]
+          }
+        }
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["route53:ListResourceRecordSets"]
+        Resource = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["route53:ListHostedZones"]
+        Resource = ["*"]
+      },
+    ]
+  })
+}
+
+resource "aws_eks_pod_identity_association" "external_dns" {
+  count = var.route53_zone_id == null ? 0 : 1
 
   cluster_name    = aws_eks_cluster.this.name
-  namespace       = local.eso_namespace
-  service_account = local.eso_service_account
-  role_arn        = aws_iam_role.eso[0].arn
+  namespace       = var.namespace
+  service_account = "external-dns"
+  role_arn        = aws_iam_role.external_dns[0].arn
 
   tags = local.tags
 }

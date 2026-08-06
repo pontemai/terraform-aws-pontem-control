@@ -41,7 +41,8 @@ module "pontem_control" {
 
   # ----- Optional -----
 
-  # Set this once Pontem sends it; see "Send Pontem two values" in the README.
+  # Set this once Pontem sends it; see "Register workload identity and re-apply"
+  # in the README.
   # Then re-apply and re-render values.yaml. Left unset, the rendered values carry
   # a placeholder that the chart accepts and the first managed-package pull rejects.
   # wif_audience = "//iam.googleapis.com/projects/…/providers/aws-eks"

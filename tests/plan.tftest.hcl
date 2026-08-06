@@ -162,6 +162,25 @@ run "default_configuration" {
     error_message = "The bound service accounts must be the bare names `api` and `worker`, which is what the chart creates — not `pontem-control-api`."
   }
 
+  assert {
+    condition = try(
+      aws_eks_pod_identity_association.eso.namespace == "pontem-control" &&
+      aws_eks_pod_identity_association.eso.service_account == "external-secrets",
+      false,
+    )
+    error_message = "External Secrets Operator must always be associated with its fixed ServiceAccount in var.namespace."
+  }
+
+  assert {
+    condition = try(
+      length(aws_iam_role.external_dns) == 0 &&
+      length(aws_iam_role_policy.external_dns) == 0 &&
+      length(aws_eks_pod_identity_association.external_dns) == 0,
+      false,
+    )
+    error_message = "ExternalDNS IAM resources must be absent when route53_zone_id is null."
+  }
+
   # The region comes from the provider, and everything below is built from it. This
   # also pins the mock: reading a different attribute than the mock supplies leaves
   # the region a generated string and every assertion downstream of it vacuous.
@@ -187,11 +206,6 @@ run "default_configuration" {
   assert {
     condition     = random_id.device_jwt_signing_key.byte_length == 32
     error_message = "The device JWT signing key must be exactly 32 bytes; the application's Ed25519 provider rejects anything else at startup."
-  }
-
-  assert {
-    condition     = random_password.db.special == false
-    error_message = "The database password must avoid special characters: it is pasted into a shell command in the README, where a metacharacter silently produces the wrong secret."
   }
 
   # ----- ACM: no waiter without a hosted zone -----
@@ -265,16 +279,39 @@ run "three_availability_zones" {
   }
 }
 
-run "external_secrets_iam_is_optional" {
+run "external_secrets_reads_only_the_boot_secrets" {
   command = plan
 
-  variables {
-    enable_external_secrets_iam = false
+  override_resource {
+    target          = aws_secretsmanager_secret.db_password
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pontem-control-db-password"
+    }
+  }
+
+  override_resource {
+    target          = aws_secretsmanager_secret.device_jwt_signing_key
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pontem-control-device-jwt-signing-key"
+    }
   }
 
   assert {
-    condition     = length(aws_iam_role.eso) == 0 && length(aws_iam_role_policy.eso) == 0 && length(aws_eks_pod_identity_association.eso) == 0
-    error_message = "Disabling enable_external_secrets_iam must remove the role, its policy, and the association together — a role left without its association is a puzzle for whoever audits it."
+    condition = try(
+      length(jsondecode(aws_iam_role_policy.eso.policy).Statement) == 1 &&
+      toset(jsondecode(aws_iam_role_policy.eso.policy).Statement[0].Action) == toset([
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret",
+      ]) &&
+      toset(jsondecode(aws_iam_role_policy.eso.policy).Statement[0].Resource) == toset([
+        aws_secretsmanager_secret.db_password.arn,
+        aws_secretsmanager_secret.device_jwt_signing_key.arn,
+      ]),
+      false,
+    )
+    error_message = "The External Secrets Operator policy must grant only read access to the two boot secrets."
   }
 }
 
@@ -290,6 +327,57 @@ run "route53_zone_creates_records_and_waits" {
   assert {
     condition     = length(aws_acm_certificate_validation.app) == 1
     error_message = "Setting route53_zone_id must add the validation waiter so the apply blocks until the certificate is ISSUED."
+  }
+
+  assert {
+    condition = try(
+      length(aws_iam_role.external_dns) == 1 &&
+      length(aws_iam_role_policy.external_dns) == 1 &&
+      length(aws_eks_pod_identity_association.external_dns) == 1 &&
+      aws_eks_pod_identity_association.external_dns[0].namespace == "pontem-control" &&
+      aws_eks_pod_identity_association.external_dns[0].service_account == "external-dns",
+      false,
+    )
+    error_message = "Setting route53_zone_id must create the ExternalDNS role and bind it to external-dns in var.namespace."
+  }
+
+  assert {
+    condition = try(
+      jsondecode(aws_iam_role_policy.external_dns[0].policy) == {
+        Version = "2012-10-17"
+        Statement = [
+          {
+            Effect   = "Allow"
+            Action   = ["route53:ChangeResourceRecordSets"]
+            Resource = ["arn:aws:route53:::hostedzone/Z0123456789ABCDEFGHIJ"]
+            Condition = {
+              "ForAllValues:StringEquals" = {
+                "route53:ChangeResourceRecordSetsActions" = ["CREATE", "UPSERT", "DELETE"]
+                "route53:ChangeResourceRecordSetsNormalizedRecordNames" = [
+                  "pontem.example.com",
+                  "external-dns-a.pontem.example.com",
+                  "external-dns-aaaa.pontem.example.com",
+                  "external-dns-cname.pontem.example.com",
+                ]
+                "route53:ChangeResourceRecordSetsRecordTypes" = ["A", "AAAA", "CNAME", "TXT"]
+              }
+            }
+          },
+          {
+            Effect   = "Allow"
+            Action   = ["route53:ListResourceRecordSets"]
+            Resource = ["arn:aws:route53:::hostedzone/Z0123456789ABCDEFGHIJ"]
+          },
+          {
+            Effect   = "Allow"
+            Action   = ["route53:ListHostedZones"]
+            Resource = ["*"]
+          },
+        ]
+      },
+      false,
+    )
+    error_message = "ExternalDNS may change only A/AAAA/CNAME and ownership TXT records for app_domain_name in the selected hosted zone; read access must be exactly ListHostedZones and ListResourceRecordSets."
   }
 }
 
