@@ -1,15 +1,11 @@
-# terraform-aws-pontem-control
+# Install Pontem in your AWS account
 
-Terraform for running the Pontem control plane in your own AWS account.
+This guide is for a platform engineer starting with an AWS account that has no
+Pontem resources. It ends when the first admin can sign in and see their
+organization. You do not need access to Pontem's application source.
 
-> **Pontem-internal note — this repo is not customer-readable yet.** It is
-> private, and `terraform init` against a source a customer cannot read fails.
-> Do not send anyone here until the repo is public and licensed.
-
-Terraform creates AWS resources and renders `helm_values`. One Helm release owns
-the controllers, application Secret, ingress resources, and workloads inside the
-cluster. Terraform does not use Kubernetes, Helm, kubectl, or local-exec
-providers or resources.
+Terraform creates the AWS resources and outputs `helm_values` for the Helm
+install below.
 
 ## What it creates
 
@@ -36,23 +32,44 @@ hostname.
 - Membership invite emails require a `RESEND_API_KEY` key in the application
   Secret.
 
-## Requirements
+## Before you start
 
 - Terraform >= 1.6.
-- AWS credentials that can create IAM, VPC, EKS, RDS, ACM, Secrets Manager, and
-  optional Route53 resources.
-- AWS CLI, kubectl, and Helm >= 3.17.
+- Git, AWS CLI, and kubectl. Helm >= 3.17.
+- AWS credentials that can create the resources listed above. Keep the IAM role
+  or user ARN behind those credentials; you will grant it access to Kubernetes.
 - A region that offers EKS Auto Mode.
-- From Pontem: a `gcp.wifAudience`, access to the distribution registry, and a
-  released chart version.
+- A hostname for the control plane and access to its DNS. A Route53 hosted zone
+  is optional; without one, you will create the certificate and application DNS
+  records yourself.
+- An OIDC issuer, API audience, and public SPA client ID. The issuer must be a
+  bare HTTPS origin with no path or port. Allow
+  `https://<your-hostname>/admin/` as both a sign-in and sign-out redirect URI.
+  Allow `https://<your-hostname>` as a web origin. The provider must issue
+  refresh tokens for `offline_access`. In Auth0, enable **Allow Offline Access**
+  on the API and the **Refresh Token** grant on the SPA application.
+- From Pontem: read access to this module, a released module version, access to
+  the distribution ECR registry, and a released chart version. Pontem supplies
+  `wif_audience` after the first Terraform apply.
 
-## Configure
+Confirm which AWS identity is active before you configure the module:
 
-See [`examples/complete`](examples/complete) for a complete root module.
+```bash
+aws sts get-caller-identity
+```
+
+If this prints an `arn:aws:sts::...:assumed-role/...` ARN, use the matching
+`arn:aws:iam::...:role/...` ARN in `cluster_admin_principal_arns`.
+
+## Configure Terraform
+
+Copy all files from [`examples/complete`](examples/complete) into a new Terraform
+root module. The example includes the AWS provider and the root outputs used by
+the commands below. In the copied `main.tf`, replace the local module block with:
 
 ```hcl
 module "pontem_control" {
-  source = "github.com/pontemai/terraform-aws-pontem-control"
+  source = "github.com/pontemai/terraform-aws-pontem-control?ref=<module-version-from-pontem>"
 
   app_domain_name = "pontem.example.com"
 
@@ -72,9 +89,7 @@ module "pontem_control" {
 }
 ```
 
-`cluster_admin_principal_arns` is the only path to the Kubernetes API. Use IAM
-role or user ARNs, not the `arn:aws:sts::...:assumed-role/...` value printed by
-`aws sts get-caller-identity`.
+Use the module version Pontem gives you. Do not source the `develop` branch.
 
 Terraform state contains the database password and device JWT signing key.
 
@@ -86,8 +101,6 @@ Terraform state contains the database password and device JWT signing key.
 terraform init
 terraform apply
 ```
-
-The EKS cluster and RDS instance usually take 20 to 30 minutes to create.
 
 If `route53_zone_id = null`, create the DNS validation record returned here:
 
@@ -106,7 +119,7 @@ aws acm describe-certificate \
 When `route53_zone_id` is set, Terraform creates the validation record and the
 apply waits for the certificate.
 
-### 2. Register workload identity and re-apply
+### 2. Register the AWS role with Pontem
 
 Send these values to Pontem:
 
@@ -125,28 +138,17 @@ terraform apply
 The default `REPLACE_ME_PONTEM_SUPPLIED` value allows installation, but managed
 package pulls fail until it is replaced.
 
-### 3. Configure kubeconfig
+### 3. Connect kubectl to the cluster
 
 ```bash
 $(terraform output -raw update_kubeconfig_command)
 kubectl get namespaces
 ```
 
-`Unauthorized` means the current AWS identity is absent from
-`cluster_admin_principal_arns`.
+If this returns `Unauthorized`, confirm that the active IAM role or user ARN is
+listed in `cluster_admin_principal_arns`.
 
-### 4. Install the pinned chart release
-
-If this cluster has a standalone `external-secrets` Helm release, uninstall it
-first:
-
-```bash
-helm uninstall external-secrets --namespace external-secrets
-```
-
-If the cluster already has the `pontem-control` `ExternalSecret` or the `alb`
-`IngressClass` and `IngressClassParams`, add `--take-ownership` to the Helm
-command below on its first run. Omit the flag after that upgrade succeeds.
+### 4. Install the Helm chart
 
 ```bash
 terraform output -raw helm_values > values.yaml
@@ -164,18 +166,32 @@ helm upgrade --install pontem-control \
   --wait --timeout 10m
 ```
 
-If an older Route53-backed install has manual A, AAAA, or CNAME records for
-`app_domain_name`, ExternalDNS will not adopt them without TXT ownership data.
-After the `external-dns` Deployment is ready, either [import those
-records](https://kubernetes-sigs.github.io/external-dns/v0.21.0/docs/advanced/import-records/)
-or delete only those application records. ExternalDNS recreates deleted records
-and their TXT ownership records on its next sync.
-
 The chart version selects the matching control-plane and admin image tags.
 `--wait` covers controller and application workload readiness. ALB provisioning,
 DNS propagation, HTTP health, and browser sign-in complete afterward.
 
-### 5. Verify the deployment
+### 5. Create the first organization
+
+A new database has no organization or admin. After the Helm command completes,
+create both from the API pod:
+
+```bash
+kubectl exec deploy/pontem-control-api \
+  --namespace "$(terraform output -raw namespace)" \
+  -c api -- \
+  uv run python -m pontem_control.scripts.bootstrap_tenant \
+  --tenant-name "<organization-name>" \
+  --slug "<organization-slug>" \
+  --extra-admin "<admin-email>" \
+  --no-gcp-binding
+```
+
+Repeat `--extra-admin` to add more admins. The command creates or reuses the
+organization and is safe to run again. It does not send email. Each pending
+admin invite is claimed when that email address first signs in through OIDC.
+`--no-gcp-binding` is required for this AWS install.
+
+### 6. Verify the deployment
 
 ```bash
 kubectl get externalsecret pontem-control \
@@ -197,12 +213,17 @@ After DNS resolves:
 curl "$(terraform output -raw app_url)/health"
 ```
 
-Open `app_url` in a browser to verify the admin sign-in flow; the API health
-endpoint does not exercise the admin container or OIDC configuration.
+Open `https://<your-hostname>/admin/` in a browser and sign in with an email
+passed to `--extra-admin`. The organization should appear after sign-in. This
+checks the admin container and OIDC configuration, which the API health endpoint
+does not.
 
-## Day two
+To connect the first device, open the in-product docs and follow **Tutorial:
+Onboard a Device**.
 
-**Kubernetes upgrades.** Raise `kubernetes_version` and apply. EKS may
+## Maintenance
+
+**Upgrade Kubernetes.** Raise `kubernetes_version` and apply. EKS may
 automatically move a cluster beyond the configured version after standard support
 ends. Check the running version with:
 
@@ -211,7 +232,7 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
   --query 'cluster.version'
 ```
 
-**Changing the hostname or Route53 configuration.** Changes to
+**Change the hostname or Route53 setup.** Changes to
 `app_domain_name` or `route53_zone_id`, including setting
 `route53_zone_id = null`, require this order:
 
@@ -232,14 +253,14 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
 4. Regenerate `values.yaml` and run the pinned Helm command in Deploy step 4.
    Helm recreates `ingress/pontem-control`. If `route53_zone_id = null`, create
    the manual application record after the Ingress has an address, as described
-   in Deploy step 5.
+   in Deploy step 6.
 
-**Inputs that replace data-bearing resources.** Changing `name_prefix` replaces
+**Changes that can destroy data.** Changing `name_prefix` replaces
 the cluster and database. Changing `db_name` or `db_user` replaces the database.
 Changing `vpc_cidr` replaces the VPC and its contents.
 
-**Device JWT signing key.** Replacing it invalidates enrolled-device JWTs; those
-devices must re-enroll.
+**Replace the device JWT signing key.** Replacing it invalidates enrolled-device
+JWTs; those devices must re-enroll.
 
 ## Troubleshooting
 
@@ -268,6 +289,9 @@ kubectl exec --namespace "$(terraform output -raw namespace)" \
   cat /usr/share/nginx/html/admin/config.js
 ```
 
+**Sign-in succeeds but no organization appears.** Run Deploy step 5 with the
+same email address returned by the OIDC provider, then reload the admin UI.
+
 **The site returns 502 while pods are ready.** The ALB target groups use `/health`
 for the API and `/healthz` for the admin service.
 
@@ -278,7 +302,7 @@ ServiceAccounts named `api` and `worker`.
 **Pods cannot reach the database.** The database admits connections only from the
 EKS cluster security group.
 
-## Destroy
+## Remove the deployment
 
 Delete the Ingress while ExternalDNS is still running:
 
