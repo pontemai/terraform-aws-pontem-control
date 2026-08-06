@@ -37,7 +37,7 @@ hostname.
 ## Before you start
 
 - Terraform >= 1.6.
-- Git, AWS CLI, kubectl, and Helm >= 3.17.
+- Git, AWS CLI, and kubectl. Helm >= 3.17.
 - AWS credentials that can create the resources listed above. Keep the IAM role
   or user ARN behind those credentials; you will grant it access to Kubernetes.
 - A region that offers EKS Auto Mode.
@@ -46,7 +46,8 @@ hostname.
   records yourself.
 - An OIDC issuer, API audience, and public SPA client ID. Allow
   `https://<your-hostname>/admin/` as both a sign-in and sign-out redirect URI.
-  The client must allow the `offline_access` scope and refresh-token grant.
+  Allow `https://<your-hostname>` as a web origin. The client must allow the
+  `offline_access` scope and refresh-token grant.
 - From Pontem: read access to this module, a released module version, access to
   the distribution ECR registry, and a released chart version. Pontem supplies
   `wif_audience` after the first Terraform apply.
