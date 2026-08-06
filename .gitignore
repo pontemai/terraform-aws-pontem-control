@@ -4,9 +4,7 @@
 *.tfstate.*
 *.tfplan
 
-# Not committed on purpose: this repo is a module, and a lock file here would
-# pin provider versions for every caller that vendored it rather than letting
-# their own root module resolve them.
+# Ignore this module's lock file so each root module resolves provider versions.
 .terraform.lock.hcl
 
 # Variable files hold the account-specific inputs, and *.auto.tfvars would be
