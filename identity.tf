@@ -156,7 +156,7 @@ resource "aws_eks_pod_identity_association" "eso" {
 # ----- ExternalDNS role -----
 
 resource "aws_iam_role" "external_dns" {
-  count = var.route53_zone_id == null ? 0 : 1
+  count = local.has_route53_zone ? 1 : 0
 
   name               = "${var.name_prefix}-external-dns"
   description        = "ExternalDNS controller in ${var.name_prefix}, assumed via EKS Pod Identity. DNS changes are limited to ${var.app_domain_name}."
@@ -166,7 +166,7 @@ resource "aws_iam_role" "external_dns" {
 }
 
 resource "aws_iam_role_policy" "external_dns" {
-  count = var.route53_zone_id == null ? 0 : 1
+  count = local.has_route53_zone ? 1 : 0
 
   name = "${var.name_prefix}-external-dns"
   role = aws_iam_role.external_dns[0].id
@@ -176,7 +176,7 @@ resource "aws_iam_role_policy" "external_dns" {
       {
         Effect   = "Allow"
         Action   = ["route53:ChangeResourceRecordSets"]
-        Resource = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+        Resource = ["arn:aws:route53:::hostedzone/${local.route53_zone_id}"]
         Condition = {
           "ForAllValues:StringEquals" = {
             "route53:ChangeResourceRecordSetsActions" = ["CREATE", "UPSERT", "DELETE"]
@@ -194,7 +194,7 @@ resource "aws_iam_role_policy" "external_dns" {
       {
         Effect   = "Allow"
         Action   = ["route53:ListResourceRecordSets"]
-        Resource = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+        Resource = ["arn:aws:route53:::hostedzone/${local.route53_zone_id}"]
       },
       {
         Effect   = "Allow"
@@ -206,7 +206,7 @@ resource "aws_iam_role_policy" "external_dns" {
 }
 
 resource "aws_eks_pod_identity_association" "external_dns" {
-  count = var.route53_zone_id == null ? 0 : 1
+  count = local.has_route53_zone ? 1 : 0
 
   cluster_name    = aws_eks_cluster.this.name
   namespace       = var.namespace

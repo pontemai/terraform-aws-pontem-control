@@ -381,6 +381,47 @@ run "route53_zone_creates_records_and_waits" {
   }
 }
 
+run "create_route53_zone_gets_the_same_automation_as_an_existing_zone" {
+  command = plan
+
+  variables {
+    create_route53_zone = true
+  }
+
+  assert {
+    condition     = length(aws_route53_zone.this) == 1 && aws_route53_zone.this[0].name == "pontem.example.com"
+    error_message = "create_route53_zone must create exactly one hosted zone, named for app_domain_name."
+  }
+
+  assert {
+    condition     = length(aws_route53_record.acm_validation) == 1 && length(aws_acm_certificate_validation.app) == 1
+    error_message = "create_route53_zone must validate the certificate the same way an existing route53_zone_id does."
+  }
+
+  assert {
+    condition = try(
+      length(aws_iam_role.external_dns) == 1 &&
+      length(aws_iam_role_policy.external_dns) == 1 &&
+      length(aws_eks_pod_identity_association.external_dns) == 1,
+      false,
+    )
+    error_message = "create_route53_zone must enable ExternalDNS the same way an existing route53_zone_id does — otherwise the two paths silently diverge in what they automate."
+  }
+}
+
+run "create_route53_zone_and_route53_zone_id_are_mutually_exclusive" {
+  command = plan
+
+  variables {
+    create_route53_zone = true
+    route53_zone_id     = "Z0123456789ABCDEFGHIJ"
+  }
+
+  # A resource precondition, not a variable validation: cross-variable validation
+  # conditions need Terraform 1.9, and this module's floor is 1.6.
+  expect_failures = [aws_route53_zone.this]
+}
+
 run "name_prefix_flows_into_every_resource_name" {
   command = plan
 

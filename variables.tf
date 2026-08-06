@@ -233,7 +233,7 @@ variable "secret_recovery_window_days" {
 # ----- DNS / TLS -----
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID for app_domain_name. Set it to automate ACM validation and enable ExternalDNS with a Pod Identity role scoped to this zone and hostname. Leave it null to disable ExternalDNS and emit acm_validation_records for you to create wherever your DNS lives."
+  description = "Route53 hosted zone ID for app_domain_name. Set it to automate ACM validation and enable ExternalDNS with a Pod Identity role scoped to this zone and hostname. Leave it null to disable ExternalDNS and emit acm_validation_records for you to create wherever your DNS lives. Mutually exclusive with create_route53_zone."
   type        = string
   default     = null
 
@@ -241,6 +241,12 @@ variable "route53_zone_id" {
     condition     = var.route53_zone_id == null || can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
     error_message = "route53_zone_id must be null or a Route53 hosted zone ID beginning with Z."
   }
+}
+
+variable "create_route53_zone" {
+  description = "Create a Route53 hosted zone for app_domain_name instead of bringing an existing one via route53_zone_id (set only one — the module rejects both). ACM validation and ExternalDNS then work exactly as they do with a caller-supplied zone. The zone is not delegated from anywhere until you add its name servers, output as route53_name_servers, as NS records for app_domain_name with your existing DNS provider — see the README for the two-step apply this requires."
+  type        = bool
+  default     = false
 }
 
 # ----- Kubernetes-side contract -----

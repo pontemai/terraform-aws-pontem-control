@@ -8,7 +8,7 @@ module "chart_values" {
   aws_region          = local.region
   acm_certificate_arn = local.acm_certificate_arn
   cluster_name        = aws_eks_cluster.this.name
-  route53_zone_id     = var.route53_zone_id
+  route53_zone_id     = local.route53_zone_id
 
   db_password_secret_name            = aws_secretsmanager_secret.db_password.name
   device_jwt_signing_key_secret_name = aws_secretsmanager_secret.device_jwt_signing_key.name
@@ -87,19 +87,24 @@ output "cp_runtime_assumed_role_arn" {
 # ----- DNS and TLS -----
 
 output "acm_certificate_arn" {
-  description = "ACM certificate ARN for app_domain_name. When route53_zone_id is set, reading this output implies the certificate is ISSUED."
+  description = "ACM certificate ARN for app_domain_name. When route53_zone_id is set or create_route53_zone is true, reading this output implies the certificate is ISSUED."
   value       = local.acm_certificate_arn
 }
 
 output "acm_validation_records" {
-  description = "DNS validation records to create when route53_zone_id is null, keyed by domain name. The certificate stays PENDING_VALIDATION — and the ALB will never finish attaching it — until these resolve. Empty when the module created them itself."
-  value = var.route53_zone_id != null ? {} : {
+  description = "DNS validation records to create when neither route53_zone_id nor create_route53_zone is set, keyed by domain name. The certificate stays PENDING_VALIDATION — and the ALB will never finish attaching it — until these resolve. Empty when the module created them itself."
+  value = local.has_route53_zone ? {} : {
     for dvo in aws_acm_certificate.app.domain_validation_options : dvo.domain_name => {
       name  = dvo.resource_record_name
       type  = dvo.resource_record_type
       value = dvo.resource_record_value
     }
   }
+}
+
+output "route53_name_servers" {
+  description = "Name servers for the hosted zone this module created, only set when create_route53_zone is true. Add these as NS records for app_domain_name with your existing DNS provider — nothing under app_domain_name resolves, and the certificate stays PENDING_VALIDATION, until that delegation is live. See the README for why this needs a two-step apply."
+  value       = var.create_route53_zone ? aws_route53_zone.this[0].name_servers : null
 }
 
 output "app_url" {

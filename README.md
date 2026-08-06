@@ -17,12 +17,14 @@ install below.
 - EKS Pod Identity roles for the control-plane pods and External Secrets
   Operator.
 - When `route53_zone_id` is set, an ExternalDNS Pod Identity role limited to that
-  hosted zone and `app_domain_name`.
+  hosted zone and `app_domain_name`. `create_route53_zone` gets you the same
+  automation with a zone this module creates, instead of one you bring
+  yourself — see [Apply Terraform](#1-apply-terraform).
 
 The Helm release installs External Secrets Operator, creates the application
 Secret from the two Secrets Manager secrets, and creates the `alb` IngressClass.
-When `route53_zone_id` is set, it also installs ExternalDNS for the application
-hostname.
+When a hosted zone is in play (`route53_zone_id` or `create_route53_zone`), it
+also installs ExternalDNS for the application hostname.
 
 ## Limits
 
@@ -41,7 +43,9 @@ hostname.
 - A region that offers EKS Auto Mode.
 - A hostname for the control plane and access to its DNS. A Route53 hosted zone
   is optional; without one, you will create the certificate and application DNS
-  records yourself.
+  records yourself. If you don't already have a zone, `create_route53_zone` has
+  the module create one — the only DNS step left is delegating to it with NS
+  records at your existing provider.
 - An OIDC issuer, API audience, and public SPA client ID. The issuer must be a
   bare HTTPS origin with no path or port. Allow
   `https://<your-hostname>/admin/` as both a sign-in and sign-out redirect URI.
@@ -89,6 +93,10 @@ module "pontem_control" {
 }
 ```
 
+Don't have a hosted zone yet? Set `create_route53_zone = true` instead of
+`route53_zone_id` and the module creates one — see [Apply
+Terraform](#1-apply-terraform) for the two-step apply that needs.
+
 Use the module version Pontem gives you. Do not source the `develop` branch.
 
 Terraform state contains the database password and device JWT signing key.
@@ -102,7 +110,24 @@ terraform init
 terraform apply
 ```
 
-If `route53_zone_id = null`, create the DNS validation record returned here:
+**If you set `create_route53_zone`:** the zone doesn't exist anywhere in public
+DNS yet, so this first apply can't also wait for a certificate that depends on
+it resolving — it fails with a timeout if you skip ahead. Apply just the zone
+first:
+
+```bash
+terraform apply -target=aws_route53_zone.this
+terraform output -raw route53_name_servers
+```
+
+Add those as NS records for `app_domain_name` with your existing DNS provider —
+delegating that one hostname, not your whole domain. Once that propagates
+(`dig NS <app_domain_name>` shows the new servers), run `terraform apply` again
+with no target. This is the same command as above; it now creates everything
+else, including the certificate, and waits for it to be issued.
+
+**If `route53_zone_id = null` and `create_route53_zone = false`,** create the DNS
+validation record returned here:
 
 ```bash
 terraform output acm_validation_records
@@ -116,8 +141,9 @@ aws acm describe-certificate \
   --query 'Certificate.Status'
 ```
 
-When `route53_zone_id` is set, Terraform creates the validation record and the
-apply waits for the certificate.
+**Otherwise** (`route53_zone_id` set, or `create_route53_zone` after the two-step
+apply above completes), Terraform created the validation record and the apply
+already waited for the certificate — nothing to do here.
 
 ### 2. Register the AWS role with Pontem
 
@@ -203,9 +229,10 @@ kubectl get ingress \
 The ExternalSecret should report `SecretSynced`. Wait for the Ingress to show an
 address.
 
-When `route53_zone_id` is set, ExternalDNS creates the application record and its
-TXT ownership record. When `route53_zone_id = null`, create a DNS record for
-`app_domain_name` pointing to the Ingress address.
+When a hosted zone is in play (`route53_zone_id` or `create_route53_zone`),
+ExternalDNS creates the application record and its TXT ownership record.
+Otherwise, create a DNS record for `app_domain_name` pointing to the Ingress
+address.
 
 After DNS resolves:
 
@@ -232,9 +259,9 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
   --query 'cluster.version'
 ```
 
-**Change the hostname or Route53 setup.** Changes to
-`app_domain_name` or `route53_zone_id`, including setting
-`route53_zone_id = null`, require this order:
+**Change the hostname or Route53 setup.** Changes to `app_domain_name`,
+`route53_zone_id`, or `create_route53_zone` — including turning either of the
+last two off — require this order:
 
 1. Delete only the chart-owned Ingress before applying the Terraform change,
    while any current ExternalDNS controller and IAM role are still active:
@@ -244,16 +271,18 @@ aws eks describe-cluster --name "$(terraform output -raw cluster_name)" \
      --namespace "$(terraform output -raw namespace)"
    ```
 
-2. If the current `route53_zone_id` is set, wait until the old application and
-   TXT ownership records are gone from that hosted zone. If it is null, remove
+2. If the current configuration has a hosted zone in play, wait until the old
+   application and TXT ownership records are gone from it. Otherwise, remove
    the old manual application and certificate-validation records.
-3. Change the inputs and run `terraform apply`. If the new
-   `route53_zone_id = null`, complete the manual certificate-validation steps in
-   Deploy step 1 before continuing.
+3. Change the inputs and run `terraform apply`. If the new configuration has no
+   hosted zone (`route53_zone_id = null` and `create_route53_zone = false`),
+   complete the manual certificate-validation steps in Deploy step 1 before
+   continuing. If it sets `create_route53_zone`, follow the two-step apply in
+   Deploy step 1 instead.
 4. Regenerate `values.yaml` and run the pinned Helm command in Deploy step 4.
-   Helm recreates `ingress/pontem-control`. If `route53_zone_id = null`, create
-   the manual application record after the Ingress has an address, as described
-   in Deploy step 6.
+   Helm recreates `ingress/pontem-control`. If the new configuration has no
+   hosted zone, create the manual application record after the Ingress has an
+   address, as described in Deploy step 6.
 
 **Changes that can destroy data.** Changing `name_prefix` replaces
 the cluster and database. Changing `db_name` or `db_user` replaces the database.
@@ -311,9 +340,9 @@ kubectl delete ingress pontem-control \
   --namespace "$(terraform output -raw namespace)"
 ```
 
-When `route53_zone_id` is set, wait until both the application record and its TXT
-ownership record are gone from Route53. When it is null, remove the manual DNS
-record. Then uninstall Helm:
+When a hosted zone is in play (`route53_zone_id` or `create_route53_zone`), wait
+until both the application record and its TXT ownership record are gone from
+Route53. Otherwise, remove the manual DNS record. Then uninstall Helm:
 
 ```bash
 helm uninstall pontem-control \
@@ -396,6 +425,7 @@ and `strcontains`.
 | [aws_internet_gateway.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/internet_gateway) | resource |
 | [aws_nat_gateway.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/nat_gateway) | resource |
 | [aws_route53_record.acm_validation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route53_record) | resource |
+| [aws_route53_zone.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route53_zone) | resource |
 | [aws_route_table.private](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table) | resource |
 | [aws_route_table.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table) | resource |
 | [aws_route_table_association.private](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table_association) | resource |
@@ -430,6 +460,7 @@ and `strcontains`.
 | oidc\_issuer | OIDC issuer URL, e.g. "https://your-tenant.us.auth0.com/". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there. | `string` | n/a | yes |
 | availability\_zone\_count | How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them. | `number` | `2` | no |
 | cloudwatch\_log\_retention\_days | Retention for the EKS control-plane log group, which collects the api, audit, and authenticator logs. 0 keeps them forever. | `number` | `90` | no |
+| create\_route53\_zone | Create a Route53 hosted zone for app\_domain\_name instead of bringing an existing one via route53\_zone\_id (set only one — the module rejects both). ACM validation and ExternalDNS then work exactly as they do with a caller-supplied zone. The zone is not delegated from anywhere until you add its name servers, output as route53\_name\_servers, as NS records for app\_domain\_name with your existing DNS provider — see the README for the two-step apply this requires. | `bool` | `false` | no |
 | db\_allocated\_storage | Initial RDS storage in GiB. Storage autoscaling is on (see db\_max\_allocated\_storage), so this is a starting point, not a ceiling. | `number` | `20` | no |
 | db\_backup\_retention\_period | Days of automated RDS backups. Also the window for point-in-time recovery, which is the only thing that recovers from a bad migration or a mistaken delete. Zero disables backups entirely. | `number` | `14` | no |
 | db\_deletion\_protection | Refuse to delete the database instance. While true, `terraform destroy` fails until it is set false and applied. | `bool` | `true` | no |
@@ -443,7 +474,7 @@ and `strcontains`.
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
 | pod\_identity\_service\_accounts | Service accounts in `namespace` bound to the control-plane runtime role. The chart's api and worker pods both need AWS credentials for tenant-secret storage. Add "mcp" only if you enable the mcp deployment (it is off unless you set mcp.host in the chart). | `list(string)` | <pre>[<br/>  "api",<br/>  "worker"<br/>]</pre> | no |
-| route53\_zone\_id | Route53 hosted zone ID for app\_domain\_name. Set it to automate ACM validation and enable ExternalDNS with a Pod Identity role scoped to this zone and hostname. Leave it null to disable ExternalDNS and emit acm\_validation\_records for you to create wherever your DNS lives. | `string` | `null` | no |
+| route53\_zone\_id | Route53 hosted zone ID for app\_domain\_name. Set it to automate ACM validation and enable ExternalDNS with a Pod Identity role scoped to this zone and hostname. Leave it null to disable ExternalDNS and emit acm\_validation\_records for you to create wherever your DNS lives. Mutually exclusive with create\_route53\_zone. | `string` | `null` | no |
 | secret\_recovery\_window\_days | Days a deleted secret stays recoverable. AWS keeps the deleted secret's NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with "already scheduled for deletion" until the window expires. 0 deletes immediately, which makes repeated build-and-tear-down cycles work. | `number` | `30` | no |
 | single\_nat\_gateway | Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
 | tags | Extra tags merged onto every resource this module creates, on top of its own Project/ManagedBy tags. | `map(string)` | `{}` | no |
@@ -454,8 +485,8 @@ and `strcontains`.
 
 | Name | Description |
 | ---- | ----------- |
-| acm\_certificate\_arn | ACM certificate ARN for app\_domain\_name. When route53\_zone\_id is set, reading this output implies the certificate is ISSUED. |
-| acm\_validation\_records | DNS validation records to create when route53\_zone\_id is null, keyed by domain name. The certificate stays PENDING\_VALIDATION — and the ALB will never finish attaching it — until these resolve. Empty when the module created them itself. |
+| acm\_certificate\_arn | ACM certificate ARN for app\_domain\_name. When route53\_zone\_id is set or create\_route53\_zone is true, reading this output implies the certificate is ISSUED. |
+| acm\_validation\_records | DNS validation records to create when neither route53\_zone\_id nor create\_route53\_zone is set, keyed by domain name. The certificate stays PENDING\_VALIDATION — and the ALB will never finish attaching it — until these resolve. Empty when the module created them itself. |
 | app\_url | Where the control plane will answer once the chart is installed and DNS points app\_domain\_name at the ALB. |
 | aws\_account\_id | Account these resources were created in. Pontem pins the federation to this account as well as to the role below, so send both. |
 | aws\_region | Region these resources were created in, read from the provider. Needed by the External Secrets Operator store, which names its region explicitly. |
@@ -467,6 +498,7 @@ and `strcontains`.
 | helm\_values | Rendered pontem-control chart values for this deployment. Write it to a file with `terraform output -raw helm_values > values.yaml` and pass it to helm. |
 | namespace | Namespace to install the chart into. The Pod Identity associations bind service accounts in this namespace, so `helm install -n` must match it. |
 | private\_subnet\_ids | Private subnet IDs. Nodes run here and the RDS subnet group spans them. |
+| route53\_name\_servers | Name servers for the hosted zone this module created, only set when create\_route53\_zone is true. Add these as NS records for app\_domain\_name with your existing DNS provider — nothing under app\_domain\_name resolves, and the certificate stays PENDING\_VALIDATION, until that delegation is live. See the README for why this needs a two-step apply. |
 | update\_kubeconfig\_command | Command that points kubectl at this cluster. Only principals listed in cluster\_admin\_principal\_arns can use the resulting context. |
 | vpc\_id | ID of the dedicated VPC. The join point for anything else you run in the same network. |
 <!-- END_TF_DOCS -->

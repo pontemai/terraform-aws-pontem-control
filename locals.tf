@@ -26,4 +26,18 @@ locals {
     "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:tenant-*",
     "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:registry-tenant-*",
   ]
+
+  # Whether a Route53 hosted zone is available at all, from the two DNS input
+  # variables alone — known at plan time even on the first apply that creates
+  # the zone, whose id is not known until apply completes. ACM validation
+  # (acm.tf), ExternalDNS (identity.tf), and the chart_values input (outputs.tf)
+  # all read through this pair instead of var.route53_zone_id directly, so
+  # create_route53_zone gets exactly the same automation as bringing an
+  # existing zone does.
+  has_route53_zone = var.create_route53_zone || var.route53_zone_id != null
+
+  # The effective zone id, only used as a plain VALUE (a record's zone_id, an
+  # IAM resource ARN), where being unknown until apply is fine. Never use this
+  # in a for_each/count condition — see has_route53_zone above.
+  route53_zone_id = var.create_route53_zone ? aws_route53_zone.this[0].zone_id : var.route53_zone_id
 }
