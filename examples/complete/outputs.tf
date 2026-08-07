@@ -1,6 +1,4 @@
-# Re-exported so the install commands in the README can read them from this root
-# with `terraform output`. The VPC id, the subnet ids, and the RDS endpoint stay in
-# the module — nothing in the install needs them.
+# Re-exported for the install commands in the repo README.
 
 output "cluster_name" {
   description = "EKS cluster name."
@@ -23,8 +21,13 @@ output "helm_values" {
 }
 
 output "acm_validation_records" {
-  description = "DNS records to create by hand when route53_zone_id is not set. Empty otherwise."
+  description = "DNS records to create when neither Route53 input is set. Empty otherwise."
   value       = module.pontem_control.acm_validation_records
+}
+
+output "route53_name_servers" {
+  description = "Name servers for a hosted zone created by the module."
+  value       = module.pontem_control.route53_name_servers
 }
 
 output "app_url" {

@@ -6,38 +6,21 @@ locals {
   region     = data.aws_region.current.region
   account_id = data.aws_caller_identity.current.account_id
 
-  # Tags are merged onto each resource individually rather than relying on the
-  # provider's default_tags: the provider block belongs to the caller, and a
-  # module that only works when its caller remembered to set default_tags is a
-  # module that silently produces untagged resources.
+  # Modules cannot set provider default_tags, so each resource gets this map.
   tags = merge({
     Project   = "pontem-control"
     ManagedBy = "terraform"
   }, var.tags)
 
-  # The two tenant-secret name prefixes the control plane's secret store writes
-  # under: user secrets as tenant-{tenant}-{id}, registry credentials as
-  # registry-tenant-{tenant}-{id}. Both must be listed — "registry-tenant-*" is
-  # NOT covered by "tenant-*", because the leading token differs. name_prefix is
-  # validated not to start with either token, so this module's own boot secrets
-  # fall outside both — which is what keeps the runtime role off the database
-  # password and the device signing key.
+  # name_prefix validation keeps boot secrets outside these runtime-role grants.
   tenant_secret_arns = [
     "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:tenant-*",
     "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:registry-tenant-*",
   ]
 
-  # Whether a Route53 hosted zone is available at all, from the two DNS input
-  # variables alone — known at plan time even on the first apply that creates
-  # the zone, whose id is not known until apply completes. ACM validation
-  # (acm.tf), ExternalDNS (identity.tf), and the chart_values input (outputs.tf)
-  # all read through this pair instead of var.route53_zone_id directly, so
-  # create_route53_zone gets exactly the same automation as bringing an
-  # existing zone does.
+  # Resource counts need a plan-time value; a new zone's ID stays unknown until apply.
   has_route53_zone = var.create_route53_zone || var.route53_zone_id != null
 
-  # The effective zone id, only used as a plain VALUE (a record's zone_id, an
-  # IAM resource ARN), where being unknown until apply is fine. Never use this
-  # in a for_each/count condition — see has_route53_zone above.
+  # Callers use this only as a value, where an unknown ID is safe during planning.
   route53_zone_id = var.create_route53_zone ? aws_route53_zone.this[0].zone_id : var.route53_zone_id
 }

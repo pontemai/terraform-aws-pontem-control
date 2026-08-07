@@ -4,9 +4,8 @@ A working root module. Copy this directory, change the inputs marked in
 [`main.tf`](main.tf), and follow the install steps in the
 [repo README](../../README.md).
 
-`main.tf` sources the module by relative path so CI validates this example against
-the module in the same commit. Point `source` at the module's Git URL and a tag
-when you copy it out:
+When you copy the example, replace the relative module `source` with its Git URL
+and a tag:
 
 ```hcl
 module "pontem_control" {
@@ -28,7 +27,7 @@ module "pontem_control" {
 | Name | Description |
 | ---- | ----------- |
 | acm\_certificate\_arn | ACM certificate ARN, for checking issuance status. |
-| acm\_validation\_records | DNS records to create by hand when route53\_zone\_id is not set. Empty otherwise. |
+| acm\_validation\_records | DNS records to create when neither Route53 input is set. Empty otherwise. |
 | app\_url | Where the control plane will answer once DNS points at the load balancer. |
 | aws\_account\_id | Account these resources live in. |
 | aws\_region | Region these resources live in. |
@@ -38,5 +37,6 @@ module "pontem_control" {
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device JWT signing key. |
 | helm\_values | Chart values for this deployment. |
 | namespace | Namespace to install the chart into. |
+| route53\_name\_servers | Name servers for a hosted zone created by the module. |
 | update\_kubeconfig\_command | Points kubectl at the new cluster. |
 <!-- END_TF_DOCS -->

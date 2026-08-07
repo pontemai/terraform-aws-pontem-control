@@ -1,6 +1,4 @@
-# The chart contract lives in a submodule of pure string rendering so that
-# `terraform test` can assert on it without AWS credentials. See
-# modules/chart_values.
+# A pure rendering submodule lets chart-value tests run without AWS credentials.
 module "chart_values" {
   source = "./modules/chart_values"
 
@@ -103,7 +101,7 @@ output "acm_validation_records" {
 }
 
 output "route53_name_servers" {
-  description = "Name servers for the hosted zone this module created, only set when create_route53_zone is true. Add these as NS records for app_domain_name with your existing DNS provider — nothing under app_domain_name resolves, and the certificate stays PENDING_VALIDATION, until that delegation is live. See the README for why this needs a two-step apply."
+  description = "Name servers for the hosted zone created when create_route53_zone is true. Delegate app_domain_name to these servers before the full apply; see the README."
   value       = var.create_route53_zone ? aws_route53_zone.this[0].name_servers : null
 }
 
