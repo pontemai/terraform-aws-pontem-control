@@ -246,12 +246,6 @@ Onboard a Device**.
 
 ## Maintenance
 
-**Upgrade an existing deployment.** If the current Terraform state contains the
-database password and signing key, the first apply rotates both boot secrets.
-Regenerate the Helm values, sync the ExternalSecret, and restart the application
-pods in the same maintenance window. The signing-key change invalidates active
-device JWTs.
-
 **Upgrade Kubernetes.** Raise `kubernetes_version` and apply. EKS may
 automatically move a cluster beyond the configured version after standard support
 ends. Check the running version with:
