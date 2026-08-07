@@ -6,13 +6,6 @@ resource "aws_route53_zone" "this" {
 
   name = var.app_domain_name
   tags = local.tags
-
-  lifecycle {
-    precondition {
-      condition     = var.route53_zone_id == null
-      error_message = "Set only one of create_route53_zone or route53_zone_id: the first provisions a new hosted zone, the second brings one you already have."
-    }
-  }
 }
 
 resource "aws_acm_certificate" "app" {

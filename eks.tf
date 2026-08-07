@@ -69,9 +69,10 @@ resource "aws_cloudwatch_log_group" "cluster" {
 }
 
 resource "aws_eks_cluster" "this" {
-  name     = var.name_prefix
-  version  = var.kubernetes_version
-  role_arn = aws_iam_role.cluster.arn
+  name                = var.name_prefix
+  version             = var.kubernetes_version
+  role_arn            = aws_iam_role.cluster.arn
+  deletion_protection = var.cluster_deletion_protection
 
   # The security-relevant control-plane logs. `audit` is the one that matters
   # for after-the-fact questions about who changed what; controllerManager and

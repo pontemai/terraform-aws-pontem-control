@@ -103,6 +103,12 @@ variable "single_nat_gateway" {
   default     = false
 }
 
+variable "enable_vpc_flow_logs" {
+  description = "Capture all VPC traffic metadata in CloudWatch. This adds CloudWatch ingestion and storage costs."
+  type        = bool
+  default     = true
+}
+
 # ----- EKS -----
 
 variable "kubernetes_version" {
@@ -116,8 +122,14 @@ variable "kubernetes_version" {
   }
 }
 
+variable "cluster_deletion_protection" {
+  description = "Refuse to delete the EKS cluster. While true, `terraform destroy` fails until it is set false and applied."
+  type        = bool
+  default     = true
+}
+
 variable "cloudwatch_log_retention_days" {
-  description = "Retention for the EKS control-plane log group, which collects the api, audit, and authenticator logs. 0 keeps them forever."
+  description = "Retention for the module's EKS, RDS, and VPC Flow Log groups. 0 keeps them forever."
   type        = number
   default     = 90
 
@@ -158,9 +170,14 @@ variable "db_allocated_storage" {
 }
 
 variable "db_max_allocated_storage" {
-  description = "Ceiling for RDS storage autoscaling, in GiB. Must exceed db_allocated_storage or autoscaling is effectively off."
+  description = "Ceiling for RDS storage autoscaling, in GiB. Must be at least db_allocated_storage."
   type        = number
   default     = 200
+
+  validation {
+    condition     = var.db_max_allocated_storage >= var.db_allocated_storage
+    error_message = "db_max_allocated_storage must be greater than or equal to db_allocated_storage."
+  }
 }
 
 variable "db_name" {
@@ -210,6 +227,28 @@ variable "db_deletion_protection" {
 
 # ----- Secrets -----
 
+variable "db_password_version" {
+  description = "Version of the generated database password. Raising it changes the secret and RDS password, but running pods keep the old value until restarted."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.db_password_version >= 1 && floor(var.db_password_version) == var.db_password_version
+    error_message = "db_password_version must be a positive whole number."
+  }
+}
+
+variable "device_jwt_signing_key_version" {
+  description = "Version of the generated device JWT signing key. Raising this value invalidates every enrolled device's JWT."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.device_jwt_signing_key_version >= 1 && floor(var.device_jwt_signing_key_version) == var.device_jwt_signing_key_version
+    error_message = "device_jwt_signing_key_version must be a positive whole number."
+  }
+}
+
 variable "secret_recovery_window_days" {
   description = "Days a deleted secret stays recoverable. AWS keeps the deleted secret's NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with \"already scheduled for deletion\" until the window expires. 0 deletes immediately, which makes repeated build-and-tear-down cycles work."
   type        = number
@@ -232,6 +271,11 @@ variable "route53_zone_id" {
     condition     = var.route53_zone_id == null || can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
     error_message = "route53_zone_id must be null or a Route53 hosted zone ID beginning with Z."
   }
+
+  validation {
+    condition     = var.route53_zone_id == null || !var.create_route53_zone
+    error_message = "Set only one of route53_zone_id or create_route53_zone."
+  }
 }
 
 variable "create_route53_zone" {
@@ -246,6 +290,17 @@ variable "namespace" {
   description = "Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials."
   type        = string
   default     = "pontem-control"
+}
+
+variable "aws_organization_id" {
+  description = "Optional AWS Organizations ID (for example, o-abc123def456). When set, Pod Identity roles also require their source to belong to this organization."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.aws_organization_id == null || can(regex("^o-[a-z0-9]{10,32}$", var.aws_organization_id))
+    error_message = "aws_organization_id must be null or an AWS Organizations ID such as o-abc123def456."
+  }
 }
 
 variable "pod_identity_service_accounts" {

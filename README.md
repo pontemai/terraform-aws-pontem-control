@@ -13,6 +13,7 @@ install below.
 - An EKS Auto Mode cluster.
 - A private, Multi-AZ RDS Postgres instance.
 - Secrets Manager secrets for the database password and device JWT signing key.
+- CloudWatch log groups for EKS, RDS, and VPC Flow Logs.
 - An ACM certificate for `app_domain_name` and, when requested, a Route53 hosted
   zone.
 - EKS Pod Identity roles for the control-plane pods and External Secrets
@@ -35,7 +36,7 @@ application hostname.
 
 ## Before you start
 
-- Terraform >= 1.6.
+- Terraform >= 1.11.4.
 - Git, AWS CLI, and kubectl. Helm >= 3.17.
 - AWS credentials that can create the resources listed above. Keep the IAM role
   or user ARN behind those credentials; you will grant it access to Kubernetes.
@@ -95,7 +96,10 @@ To create a hosted zone, omit `route53_zone_id` and set
 
 Use the module version Pontem gives you. Do not source the `develop` branch.
 
-Terraform state contains the database password and device JWT signing key.
+Terraform plans and state do not contain the generated database password or
+device JWT signing key. Raising either secret-version input rotates that secret;
+database rotation needs a pod rollout, and signing-key rotation invalidates
+active device JWTs.
 
 ## Deploy
 
@@ -337,7 +341,8 @@ helm uninstall pontem-control \
   --wait
 ```
 
-Set `db_deletion_protection = false`, apply that change, then destroy Terraform:
+Set `cluster_deletion_protection = false` and `db_deletion_protection = false`,
+apply those changes, then destroy Terraform:
 
 ```bash
 terraform apply
@@ -357,24 +362,22 @@ make test    # terraform test only
 make docs    # regenerate the input/output tables in these READMEs
 ```
 
-Contributing requires Terraform 1.8 or newer because the tests use provider mocks
-and `strcontains`.
+Contributing requires Terraform 1.11.4 or newer.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
 | Name | Version |
 | ---- | ------- |
-| terraform | >= 1.6.0 |
-| aws | ~> 6.0 |
-| random | ~> 3.6 |
+| terraform | >= 1.11.4 |
+| aws | >= 6.45.0, < 7.0.0 |
+| random | ~> 3.9 |
 
 ## Providers
 
 | Name | Version |
 | ---- | ------- |
 | aws | 6.58.0 |
-| random | 3.9.0 |
 
 ## Resources
 
@@ -383,6 +386,8 @@ and `strcontains`.
 | [aws_acm_certificate.app](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/acm_certificate) | resource |
 | [aws_acm_certificate_validation.app](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/acm_certificate_validation) | resource |
 | [aws_cloudwatch_log_group.cluster](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
+| [aws_cloudwatch_log_group.rds](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
+| [aws_cloudwatch_log_group.vpc_flow](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
 | [aws_db_instance.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance) | resource |
 | [aws_db_subnet_group.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_subnet_group) | resource |
 | [aws_eip.nat](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eip) | resource |
@@ -392,14 +397,17 @@ and `strcontains`.
 | [aws_eks_pod_identity_association.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_eks_pod_identity_association.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_eks_pod_identity_association.external_dns](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
+| [aws_flow_log.vpc](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/flow_log) | resource |
 | [aws_iam_role.auto_node](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.cluster](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.external_dns](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_role.vpc_flow](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.external_dns](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
+| [aws_iam_role_policy.vpc_flow](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy_attachment.auto_node_ecr_pull](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.auto_node_minimal](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.cluster_block_storage](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
@@ -423,14 +431,11 @@ and `strcontains`.
 | [aws_subnet.private](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet) | resource |
 | [aws_subnet.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet) | resource |
 | [aws_vpc.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc) | resource |
-| [random_id.device_jwt_signing_key](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id) | resource |
-| [random_password.db](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password) | resource |
 | [aws_availability_zones.available](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.cluster_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.node_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
-| [aws_iam_policy_document.pod_identity_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
 
 ## Inputs
@@ -444,17 +449,22 @@ and `strcontains`.
 | oidc\_client\_id | Client ID of the public single-page-app client the admin UI signs in with. Used only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy. | `string` | n/a | yes |
 | oidc\_issuer | OIDC issuer URL, e.g. "https://your-tenant.us.auth0.com/". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there. | `string` | n/a | yes |
 | availability\_zone\_count | How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them. | `number` | `2` | no |
-| cloudwatch\_log\_retention\_days | Retention for the EKS control-plane log group, which collects the api, audit, and authenticator logs. 0 keeps them forever. | `number` | `90` | no |
+| aws\_organization\_id | Optional AWS Organizations ID (for example, o-abc123def456). When set, Pod Identity roles also require their source to belong to this organization. | `string` | `null` | no |
+| cloudwatch\_log\_retention\_days | Retention for the module's EKS, RDS, and VPC Flow Log groups. 0 keeps them forever. | `number` | `90` | no |
+| cluster\_deletion\_protection | Refuse to delete the EKS cluster. While true, `terraform destroy` fails until it is set false and applied. | `bool` | `true` | no |
 | create\_route53\_zone | Create a Route53 hosted zone for app\_domain\_name. Cannot be used with route53\_zone\_id. Delegate the hostname to route53\_name\_servers before the full apply; see the README. | `bool` | `false` | no |
 | db\_allocated\_storage | Initial RDS storage in GiB. Storage autoscaling is on (see db\_max\_allocated\_storage), so this is a starting point, not a ceiling. | `number` | `20` | no |
 | db\_backup\_retention\_period | Days of automated RDS backups. Also the window for point-in-time recovery, which is the only thing that recovers from a bad migration or a mistaken delete. Zero disables backups entirely. | `number` | `14` | no |
 | db\_deletion\_protection | Refuse to delete the database instance. While true, `terraform destroy` fails until it is set false and applied. | `bool` | `true` | no |
 | db\_engine\_version | RDS Postgres MAJOR version. Major-only on purpose: RDS then owns the minor and patches it, whereas pinning a minor fights auto\_minor\_version\_upgrade and eventually plans an impossible downgrade. | `string` | `"18"` | no |
 | db\_instance\_class | RDS instance class. Changing it is an in-place modification with a short failover, not a replacement. | `string` | `"db.t4g.medium"` | no |
-| db\_max\_allocated\_storage | Ceiling for RDS storage autoscaling, in GiB. Must exceed db\_allocated\_storage or autoscaling is effectively off. | `number` | `200` | no |
+| db\_max\_allocated\_storage | Ceiling for RDS storage autoscaling, in GiB. Must be at least db\_allocated\_storage. | `number` | `200` | no |
 | db\_multi\_az | Run the database as a Multi-AZ deployment with a synchronous standby. Roughly doubles the instance cost. False turns an AZ failure into an outage plus a restore from backup; the database is the control plane's only durable store. | `bool` | `true` | no |
 | db\_name | Application database name inside the instance. CHANGING THIS REPLACES THE DATABASE INSTANCE and destroys its data. | `string` | `"pontem"` | no |
+| db\_password\_version | Version of the generated database password. Raising it changes the secret and RDS password, but running pods keep the old value until restarted. | `number` | `1` | no |
 | db\_user | Postgres user the application authenticates as. This is the instance's master user, so it is created with the instance; CHANGING IT REPLACES THE DATABASE. | `string` | `"app"` | no |
+| device\_jwt\_signing\_key\_version | Version of the generated device JWT signing key. Raising this value invalidates every enrolled device's JWT. | `number` | `1` | no |
+| enable\_vpc\_flow\_logs | Capture all VPC traffic metadata in CloudWatch. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
