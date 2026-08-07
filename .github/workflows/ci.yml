@@ -16,9 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The module itself needs only Terraform >= 1.6; the tests need 1.8 for
-  # mock_provider and strcontains. The pin is just current stable.
-  TERRAFORM_VERSION: 1.13.3
+  # Run the minimum supported version so feature drift fails in CI.
+  TERRAFORM_VERSION: 1.11.0
   TFLINT_VERSION: v0.64.0
   TERRAFORM_DOCS_VERSION: v0.24.0
 
@@ -26,24 +25,27 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
-      - uses: terraform-linters/setup-tflint@v4
+      - uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4
         with:
           tflint_version: ${{ env.TFLINT_VERSION }}
 
       - name: Install terraform-docs
         run: |
-          curl -sSLo terraform-docs.tar.gz \
-            "https://terraform-docs.io/dl/${TERRAFORM_DOCS_VERSION}/terraform-docs-${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz"
-          tar -xzf terraform-docs.tar.gz terraform-docs
+          archive="terraform-docs-${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz"
+          checksums="terraform-docs-${TERRAFORM_DOCS_VERSION}.sha256sum"
+          release="https://github.com/terraform-docs/terraform-docs/releases/download/${TERRAFORM_DOCS_VERSION}"
+          curl -fsSLO "${release}/${archive}"
+          curl -fsSLO "${release}/${checksums}"
+          grep "  ${archive}$" "${checksums}" | sha256sum --check --strict
+          tar -xzf "${archive}" terraform-docs
           install -m 0755 terraform-docs /usr/local/bin/terraform-docs
-          rm -f terraform-docs terraform-docs.tar.gz
 
       - name: Formatting
         run: make fmt

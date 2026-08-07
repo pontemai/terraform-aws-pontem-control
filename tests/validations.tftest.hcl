@@ -194,6 +194,17 @@ run "rejects_backup_retention_over_the_rds_limit" {
   expect_failures = [var.db_backup_retention_period]
 }
 
+run "rejects_storage_ceiling_below_initial_size" {
+  command = plan
+
+  variables {
+    db_allocated_storage     = 100
+    db_max_allocated_storage = 50
+  }
+
+  expect_failures = [var.db_max_allocated_storage]
+}
+
 run "rejects_issuer_with_a_path" {
   command = plan
 
@@ -227,4 +238,34 @@ run "rejects_empty_oidc_client_id" {
   # The one input whose absence produces a healthy-looking deployment with an
   # unusable admin UI, so it is worth rejecting at plan time.
   expect_failures = [var.oidc_client_id]
+}
+
+run "rejects_malformed_organization_id" {
+  command = plan
+
+  variables {
+    aws_organization_id = "123456789012"
+  }
+
+  expect_failures = [var.aws_organization_id]
+}
+
+run "rejects_non_positive_db_password_version" {
+  command = plan
+
+  variables {
+    db_password_version = 0
+  }
+
+  expect_failures = [var.db_password_version]
+}
+
+run "rejects_fractional_device_jwt_signing_key_version" {
+  command = plan
+
+  variables {
+    device_jwt_signing_key_version = 1.5
+  }
+
+  expect_failures = [var.device_jwt_signing_key_version]
 }

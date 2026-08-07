@@ -4,8 +4,6 @@ mock_provider "aws" {
   source = "./tests/mocks"
 }
 
-mock_provider "random" {}
-
 variables {
   app_domain_name                      = "pontem.example.com"
   cluster_admin_principal_arns         = ["arn:aws:iam::123456789012:role/installer"]
@@ -31,6 +29,11 @@ run "default_configuration" {
   }
 
   assert {
+    condition     = aws_eks_cluster.this.deletion_protection == true
+    error_message = "The EKS cluster must default to deletion-protected; deleting it before its in-cluster load balancers are removed leaves orphaned AWS resources behind."
+  }
+
+  assert {
     condition     = aws_db_instance.this.skip_final_snapshot == false
     error_message = "A final snapshot must be taken on delete; without one a destroy leaves nothing to restore from."
   }
@@ -53,6 +56,16 @@ run "default_configuration" {
   assert {
     condition     = aws_db_instance.this.engine_lifecycle_support == "open-source-rds-extended-support-disabled"
     error_message = "Extended support must stay disabled — it can only be set at create time, so a missed default here cannot be fixed later without replacing the instance."
+  }
+
+  assert {
+    condition     = toset(aws_db_instance.this.enabled_cloudwatch_logs_exports) == toset(["postgresql", "upgrade"])
+    error_message = "RDS must export its PostgreSQL and upgrade logs so database errors and upgrade failures are available after the instance is gone."
+  }
+
+  assert {
+    condition     = aws_db_instance.this.password_wo_version == 1
+    error_message = "The RDS password must use its write-only argument and an explicit version so Terraform never stores the password and rotates it only when requested."
   }
 
   assert {
@@ -127,6 +140,11 @@ run "default_configuration" {
   }
 
   assert {
+    condition     = alltrue([for subnet in aws_subnet.public : subnet.map_public_ip_on_launch == false])
+    error_message = "Public subnets must not assign public IPv4 addresses to every EC2 instance launched in them; the ALB and NAT gateways manage their own addresses."
+  }
+
+  assert {
     condition     = aws_subnet.private[0].tags["kubernetes.io/role/internal-elb"] == "1"
     error_message = "Private subnets must carry kubernetes.io/role/internal-elb=1 for internal load balancer discovery."
   }
@@ -164,6 +182,25 @@ run "default_configuration" {
 
   assert {
     condition = try(
+      jsondecode(aws_iam_role.cp_runtime.assume_role_policy).Statement[0].Condition.StringEquals == {
+        "aws:RequestTag/eks-cluster-arn"            = ["arn:aws:eks:us-east-1:123456789012:cluster/pontem-control"]
+        "aws:RequestTag/kubernetes-namespace"       = ["pontem-control"]
+        "aws:RequestTag/kubernetes-service-account" = ["api", "worker"]
+        "aws:SourceAccount"                         = ["123456789012"]
+      } &&
+      jsondecode(aws_iam_role.eso.assume_role_policy).Statement[0].Condition.StringEquals == {
+        "aws:RequestTag/eks-cluster-arn"            = ["arn:aws:eks:us-east-1:123456789012:cluster/pontem-control"]
+        "aws:RequestTag/kubernetes-namespace"       = ["pontem-control"]
+        "aws:RequestTag/kubernetes-service-account" = ["external-secrets"]
+        "aws:SourceAccount"                         = ["123456789012"]
+      },
+      false,
+    )
+    error_message = "Each Pod Identity role must trust only its exact cluster, namespace, and service accounts."
+  }
+
+  assert {
+    condition = try(
       length(aws_iam_role.external_dns) == 0 &&
       length(aws_iam_role_policy.external_dns) == 0 &&
       length(aws_eks_pod_identity_association.external_dns) == 0,
@@ -172,7 +209,7 @@ run "default_configuration" {
     error_message = "ExternalDNS IAM resources must be absent when neither Route53 input is set."
   }
 
-  # Pin the mock; a generated region would make this string check vacuous.
+  # Pin the mock; a generated region would make this string check meaningless.
   assert {
     condition     = aws_secretsmanager_secret.db_password.tags["ManagedBy"] == "terraform" && strcontains(output.update_kubeconfig_command, "--region us-east-1")
     error_message = "The kubeconfig command must name the provider's region."
@@ -191,8 +228,11 @@ run "default_configuration" {
   }
 
   assert {
-    condition     = random_id.device_jwt_signing_key.byte_length == 32
-    error_message = "The device JWT signing key must be exactly 32 bytes; the application's Ed25519 provider rejects anything else at startup."
+    condition = (
+      aws_secretsmanager_secret_version.db_password.secret_string_wo_version == 1 &&
+      aws_secretsmanager_secret_version.device_jwt_signing_key.secret_string_wo_version == 1
+    )
+    error_message = "Both boot secrets must use write-only values with explicit versions so neither secret is stored in Terraform state."
   }
 
   # ----- ACM: no waiter without a hosted zone -----
@@ -212,6 +252,51 @@ run "default_configuration" {
   assert {
     condition     = aws_cloudwatch_log_group.cluster.retention_in_days == 90
     error_message = "The control-plane log group must be created here with finite retention; left to EKS it is created with never-expire retention and billed forever."
+  }
+
+  assert {
+    condition = alltrue([
+      for name, group in aws_cloudwatch_log_group.rds :
+      group.name == "/aws/rds/instance/pontem-control/${name}" && group.retention_in_days == 90
+    ]) && toset(keys(aws_cloudwatch_log_group.rds)) == toset(["postgresql", "upgrade"])
+    error_message = "The PostgreSQL and upgrade log groups must use RDS's expected names and the module's finite retention."
+  }
+
+  assert {
+    condition = try(
+      length(aws_flow_log.vpc) == 1 &&
+      aws_flow_log.vpc[0].traffic_type == "ALL" &&
+      aws_cloudwatch_log_group.vpc_flow[0].retention_in_days == 90 &&
+      jsondecode(aws_iam_role.vpc_flow[0].assume_role_policy).Statement[0].Condition == {
+        ArnLike = {
+          "aws:SourceArn" = "arn:aws:ec2:us-east-1:123456789012:vpc-flow-log/*"
+        }
+        StringEquals = {
+          "aws:SourceAccount" = "123456789012"
+        }
+      },
+      false,
+    )
+    error_message = "VPC Flow Logs must default on for all traffic and use the module's finite CloudWatch retention."
+  }
+}
+
+run "vpc_flow_logs_can_be_disabled" {
+  command = plan
+
+  variables {
+    enable_vpc_flow_logs = false
+  }
+
+  assert {
+    condition = try(
+      length(aws_flow_log.vpc) == 0 &&
+      length(aws_cloudwatch_log_group.vpc_flow) == 0 &&
+      length(aws_iam_role.vpc_flow) == 0 &&
+      length(aws_iam_role_policy.vpc_flow) == 0,
+      false,
+    )
+    error_message = "Disabling VPC Flow Logs must remove the flow log, CloudWatch group, and delivery IAM role together."
   }
 }
 
@@ -315,10 +400,16 @@ run "route53_zone_creates_records_and_waits" {
       length(aws_iam_role_policy.external_dns) == 1 &&
       length(aws_eks_pod_identity_association.external_dns) == 1 &&
       aws_eks_pod_identity_association.external_dns[0].namespace == "pontem-control" &&
-      aws_eks_pod_identity_association.external_dns[0].service_account == "external-dns",
+      aws_eks_pod_identity_association.external_dns[0].service_account == "external-dns" &&
+      jsondecode(aws_iam_role.external_dns[0].assume_role_policy).Statement[0].Condition.StringEquals == {
+        "aws:RequestTag/eks-cluster-arn"            = ["arn:aws:eks:us-east-1:123456789012:cluster/pontem-control"]
+        "aws:RequestTag/kubernetes-namespace"       = ["pontem-control"]
+        "aws:RequestTag/kubernetes-service-account" = ["external-dns"]
+        "aws:SourceAccount"                         = ["123456789012"]
+      },
       false,
     )
-    error_message = "Setting route53_zone_id must create the ExternalDNS role and bind it to external-dns in var.namespace."
+    error_message = "Setting route53_zone_id must create the ExternalDNS role and restrict it to external-dns in the expected cluster and namespace."
   }
 
   assert {
@@ -358,6 +449,26 @@ run "route53_zone_creates_records_and_waits" {
       false,
     )
     error_message = "ExternalDNS may change only A/AAAA/CNAME and ownership TXT records for app_domain_name in the selected hosted zone; read access must be exactly ListHostedZones and ListResourceRecordSets."
+  }
+}
+
+run "organization_scope_is_added_to_every_pod_identity_role" {
+  command = plan
+
+  variables {
+    aws_organization_id = "o-abc123def456"
+    route53_zone_id     = "Z0123456789ABCDEFGHIJ"
+  }
+
+  assert {
+    condition = alltrue([
+      for policy in [
+        aws_iam_role.cp_runtime.assume_role_policy,
+        aws_iam_role.eso.assume_role_policy,
+        aws_iam_role.external_dns[0].assume_role_policy,
+      ] : jsondecode(policy).Statement[0].Condition.StringEquals["aws:SourceOrgId"] == ["o-abc123def456"]
+    ])
+    error_message = "Setting aws_organization_id must add the organization boundary to every Pod Identity trust policy."
   }
 }
 
@@ -444,9 +555,7 @@ run "create_route53_zone_and_route53_zone_id_are_mutually_exclusive" {
     route53_zone_id     = "Z0123456789ABCDEFGHIJ"
   }
 
-  # Variable validation that refers to another variable needs Terraform 1.9;
-  # this module supports 1.6.
-  expect_failures = [aws_route53_zone.this]
+  expect_failures = [var.route53_zone_id]
 }
 
 run "name_prefix_flows_into_every_resource_name" {

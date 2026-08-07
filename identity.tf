@@ -6,24 +6,41 @@
 
 # One role supplies tenant-secret access and the AWS identity used for GCP federation.
 
-data "aws_iam_policy_document" "pod_identity_assume" {
-  statement {
-    effect = "Allow"
-    # Pod Identity requires TagSession alongside AssumeRole: the agent tags the
-    # session with cluster, namespace, and service-account attributes.
-    actions = ["sts:AssumeRole", "sts:TagSession"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["pods.eks.amazonaws.com"]
-    }
+locals {
+  pod_identity_assume_role_policies = {
+    for role, service_accounts in {
+      cp_runtime   = var.pod_identity_service_accounts
+      eso          = ["external-secrets"]
+      external_dns = ["external-dns"]
+      } : role => jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+          Effect = "Allow"
+          Principal = {
+            Service = "pods.eks.amazonaws.com"
+          }
+          # Pod Identity requires TagSession because the agent supplies the
+          # cluster, namespace, and service-account tags checked below.
+          Action = ["sts:AssumeRole", "sts:TagSession"]
+          Condition = {
+            StringEquals = merge({
+              "aws:RequestTag/eks-cluster-arn"            = ["arn:aws:eks:${local.region}:${local.account_id}:cluster/${var.name_prefix}"]
+              "aws:RequestTag/kubernetes-namespace"       = [var.namespace]
+              "aws:RequestTag/kubernetes-service-account" = service_accounts
+              "aws:SourceAccount"                         = [local.account_id]
+              }, var.aws_organization_id == null ? {} : {
+              "aws:SourceOrgId" = [var.aws_organization_id]
+            })
+          }
+        }]
+    })
   }
 }
 
 resource "aws_iam_role" "cp_runtime" {
   name               = "${var.name_prefix}-cp-runtime"
   description        = "Runtime identity for the pontem-control api/worker pods in ${var.name_prefix}, assumed via EKS Pod Identity: tenant-secret CRUD in Secrets Manager, and the AWS identity Pontem's GCP Workload Identity Federation provider trusts."
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  assume_role_policy = local.pod_identity_assume_role_policies.cp_runtime
 
   tags = local.tags
 }
@@ -83,7 +100,7 @@ moved {
 resource "aws_iam_role" "eso" {
   name               = "${var.name_prefix}-external-secrets"
   description        = "External Secrets Operator controller in ${var.name_prefix}, assumed via EKS Pod Identity. Read-only on this module's two boot secrets."
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  assume_role_policy = local.pod_identity_assume_role_policies.eso
 
   tags = local.tags
 }
@@ -123,7 +140,7 @@ resource "aws_iam_role" "external_dns" {
 
   name               = "${var.name_prefix}-external-dns"
   description        = "ExternalDNS controller in ${var.name_prefix}, assumed via EKS Pod Identity. DNS changes are limited to ${var.app_domain_name}."
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  assume_role_policy = local.pod_identity_assume_role_policies.external_dns
 
   tags = local.tags
 }

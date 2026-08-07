@@ -40,20 +40,13 @@ resource "aws_security_group" "db" {
   })
 }
 
-# The keepers tie this password's lifetime to the instance's stable identity, so
-# it rotates only if the instance is renamed or moves region — never as a side
-# effect of an unrelated change elsewhere in the module.
-#
-# RDS engines disagree on allowed punctuation; 32 alphanumeric characters avoid
-# that compatibility surface while retaining about 190 bits of entropy.
-resource "random_password" "db" {
-  length  = 32
-  special = false
+resource "aws_cloudwatch_log_group" "rds" {
+  for_each = toset(["postgresql", "upgrade"])
 
-  keepers = {
-    identifier = var.name_prefix
-    region     = local.region
-  }
+  name              = "/aws/rds/instance/${var.name_prefix}/${each.value}"
+  retention_in_days = var.cloudwatch_log_retention_days
+
+  tags = local.tags
 }
 
 resource "aws_db_instance" "this" {
@@ -67,7 +60,7 @@ resource "aws_db_instance" "this" {
   # Do not auto-enroll in paid RDS Extended Support when this major leaves
   # standard support — upgrade instead, matching the cluster's STANDARD upgrade
   # policy. The API only honors this at create/restore time, so it cannot be
-  # retrofitted onto an existing instance.
+  # added to an existing instance later.
   engine_lifecycle_support = "open-source-rds-extended-support-disabled"
 
   instance_class = var.db_instance_class
@@ -77,10 +70,11 @@ resource "aws_db_instance" "this" {
   storage_type          = "gp3"
   storage_encrypted     = true
 
-  db_name  = var.db_name
-  username = var.db_user
-  password = random_password.db.result
-  port     = 5432
+  db_name             = var.db_name
+  username            = var.db_user
+  password_wo         = ephemeral.random_password.db.result
+  password_wo_version = var.db_password_version
+  port                = 5432
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.db.id]
@@ -92,6 +86,8 @@ resource "aws_db_instance" "this" {
   publicly_accessible = false
 
   backup_retention_period = var.db_backup_retention_period
+
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
   # Explicit rather than left to the provider default: the failure this prevents is
   # an instance that quietly stops taking security patches.
@@ -112,14 +108,5 @@ resource "aws_db_instance" "this" {
 
   tags = local.tags
 
-  # A precondition rather than a variable validation: validation blocks could not
-  # reference a second variable until Terraform 1.9, and this module supports 1.6.
-  # RDS rejects a non-zero autoscaling ceiling below the initial size, so without
-  # this the apply fails at instance creation rather than at plan.
-  lifecycle {
-    precondition {
-      condition     = var.db_max_allocated_storage >= var.db_allocated_storage
-      error_message = "db_max_allocated_storage (${var.db_max_allocated_storage}) must be greater than or equal to db_allocated_storage (${var.db_allocated_storage}); RDS rejects a storage-autoscaling ceiling below the initial size."
-    }
-  }
+  depends_on = [aws_cloudwatch_log_group.rds]
 }
