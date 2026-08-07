@@ -29,7 +29,14 @@ lint:
 
 test:
 	terraform -chdir=. init -backend=false -input=false -upgrade >/dev/null
-	terraform -chdir=. test
+	@test_output="$$(terraform -chdir=. test -json -verbose)" || { \
+		printf '%s\n' "$$test_output"; \
+		exit 1; \
+	}; \
+	if printf '%s\n' "$$test_output" | grep -Eq '"address":"aws_eks_access_(entry|policy_association)\.auto_node(\[|")'; then \
+		echo "Terraform must not manage EKS Auto Mode node access." >&2; \
+		exit 1; \
+	fi
 	terraform -chdir=$(CHART_VALUES) init -backend=false -input=false -upgrade >/dev/null
 	terraform -chdir=$(CHART_VALUES) test
 
@@ -43,4 +50,3 @@ docs-check:
 	terraform-docs -c .terraform-docs.yml --output-check .
 	terraform-docs -c .terraform-docs.yml --output-check examples/complete
 	terraform-docs -c .terraform-docs.yml --output-check $(CHART_VALUES)
-
