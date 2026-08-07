@@ -1,33 +1,10 @@
-# The AWS identities the in-cluster workloads assume, via EKS Pod Identity. The
-# Pod Identity agent is built into Auto Mode, so there is no add-on resource
-# here — an association is enough.
-
-# ----------------------------------------------------------------------------
-# CROSS-REPO CONTRACT with the pontem-control Helm chart
-#
-# The associations below bind AWS roles to ServiceAccounts by NAME, server-side, at
-# pod start. If a name drifts from what the chart creates, nothing fails at apply
-# time and nothing fails at install time: the pods start, get no AWS credentials,
-# and tenant-secret operations return 500 with AccessDenied.
-#
-# The names are the bare "api" and "worker" from values.yaml
-# serviceAccount.{api,worker}.name — NOT "pontem-control-api"; values-aws.yaml does
-# not override them. The chart has no namespace key, so it installs wherever
-# `helm install -n` points, which must be var.namespace.
-# ----------------------------------------------------------------------------
+# Auto Mode includes the EKS Pod Identity agent. Associations match the chart's
+# service-account names and install namespace; a mismatch starts pods without AWS
+# credentials. The chart uses the bare names "api" and "worker".
 
 # ----- Control-plane runtime role -----
 
-# AWS allows exactly one Pod Identity role per ServiceAccount, so this single
-# role carries every concern that rides the pods' ambient AWS identity:
-#
-#   1. Tenant-secret CRUD in Secrets Manager. Under secretsBackend.type "aws"
-#      the application talks to Secrets Manager directly; the inline policy
-#      below is what lets it.
-#   2. The AWS identity that Pontem's GCP Workload Identity Federation provider
-#      trusts, so the pods can federate into GCP and pull managed agent
-#      packages. Nothing extra is configured here — GCP trusts this role by ARN
-#      (see the cp_runtime_assumed_role_arn output).
+# One role supplies tenant-secret access and the AWS identity used for GCP federation.
 
 data "aws_iam_policy_document" "pod_identity_assume" {
   statement {
@@ -51,18 +28,6 @@ resource "aws_iam_role" "cp_runtime" {
   tags = local.tags
 }
 
-# These are the Secrets Manager actions the application's secret store actually
-# performs, one per method of its storage interface:
-#
-#   CreateSecret + TagResource      creating a tenant secret (it carries tags)
-#   PutSecretValue                  adding a new version
-#   GetSecretValue                  reading a version
-#   ListSecretVersionIds
-#     + UpdateSecretVersionStage    the disable/enable staging-label relabel
-#   DescribeSecret                  metadata and version listing
-#   DeleteSecret                    force-deleting a tenant's secret
-#
-# Resource-scoped to the two tenant-secret prefixes (locals.tf).
 data "aws_iam_policy_document" "cp_runtime" {
   statement {
     effect = "Allow"
@@ -86,9 +51,7 @@ resource "aws_iam_role_policy" "cp_runtime" {
   policy = data.aws_iam_policy_document.cp_runtime.json
 }
 
-# One association per ServiceAccount. None of them needs to exist yet: the
-# association binds by name, and credentials are injected when a pod using that
-# ServiceAccount runs. So this applies cleanly before the chart is installed.
+# Associations can be created before the chart creates its service accounts.
 resource "aws_eks_pod_identity_association" "cp_runtime" {
   for_each = toset(var.pod_identity_service_accounts)
 
@@ -156,7 +119,7 @@ resource "aws_eks_pod_identity_association" "eso" {
 # ----- ExternalDNS role -----
 
 resource "aws_iam_role" "external_dns" {
-  count = var.route53_zone_id == null ? 0 : 1
+  count = local.has_route53_zone ? 1 : 0
 
   name               = "${var.name_prefix}-external-dns"
   description        = "ExternalDNS controller in ${var.name_prefix}, assumed via EKS Pod Identity. DNS changes are limited to ${var.app_domain_name}."
@@ -166,7 +129,7 @@ resource "aws_iam_role" "external_dns" {
 }
 
 resource "aws_iam_role_policy" "external_dns" {
-  count = var.route53_zone_id == null ? 0 : 1
+  count = local.has_route53_zone ? 1 : 0
 
   name = "${var.name_prefix}-external-dns"
   role = aws_iam_role.external_dns[0].id
@@ -176,7 +139,7 @@ resource "aws_iam_role_policy" "external_dns" {
       {
         Effect   = "Allow"
         Action   = ["route53:ChangeResourceRecordSets"]
-        Resource = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+        Resource = ["arn:aws:route53:::hostedzone/${local.route53_zone_id}"]
         Condition = {
           "ForAllValues:StringEquals" = {
             "route53:ChangeResourceRecordSetsActions" = ["CREATE", "UPSERT", "DELETE"]
@@ -194,7 +157,7 @@ resource "aws_iam_role_policy" "external_dns" {
       {
         Effect   = "Allow"
         Action   = ["route53:ListResourceRecordSets"]
-        Resource = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+        Resource = ["arn:aws:route53:::hostedzone/${local.route53_zone_id}"]
       },
       {
         Effect   = "Allow"
@@ -206,7 +169,7 @@ resource "aws_iam_role_policy" "external_dns" {
 }
 
 resource "aws_eks_pod_identity_association" "external_dns" {
-  count = var.route53_zone_id == null ? 0 : 1
+  count = local.has_route53_zone ? 1 : 0
 
   cluster_name    = aws_eks_cluster.this.name
   namespace       = var.namespace

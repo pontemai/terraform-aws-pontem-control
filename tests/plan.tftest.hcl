@@ -1,11 +1,4 @@
-# Structural assertions on a full, credential-free plan of the module.
-#
-# Two things are being guarded. First, the arithmetic: subnet CIDRs, NAT counts,
-# and per-AZ route tables are computed from variables, and an off-by-one there
-# produces overlapping subnets or an AZ with no egress. Second, the defaults that
-# decide whether losing an availability zone or running a destroy is survivable —
-# Multi-AZ, deletion protection, backups, secret recovery, and the API endpoint
-# allowlist. Each assertion names what breaks if the default moves.
+# Module tests run against mock providers; each assertion checks public behavior.
 
 mock_provider "aws" {
   source = "./tests/mocks"
@@ -128,8 +121,6 @@ run "default_configuration" {
     error_message = "Each index must put its public and private subnet in the same AZ; otherwise a NAT gateway serves a route table in another zone and pays cross-AZ transfer for all egress."
   }
 
-  # Load-bearing tags: Auto Mode's built-in load balancer controller discovers
-  # subnets by them, and without them an Ingress never gets an address.
   assert {
     condition     = aws_subnet.public[0].tags["kubernetes.io/role/elb"] == "1"
     error_message = "Public subnets must carry kubernetes.io/role/elb=1 for ALB subnet discovery."
@@ -178,19 +169,15 @@ run "default_configuration" {
       length(aws_eks_pod_identity_association.external_dns) == 0,
       false,
     )
-    error_message = "ExternalDNS IAM resources must be absent when route53_zone_id is null."
+    error_message = "ExternalDNS IAM resources must be absent when neither Route53 input is set."
   }
 
-  # The region comes from the provider, and everything below is built from it. This
-  # also pins the mock: reading a different attribute than the mock supplies leaves
-  # the region a generated string and every assertion downstream of it vacuous.
+  # Pin the mock; a generated region would make this string check vacuous.
   assert {
     condition     = aws_secretsmanager_secret.db_password.tags["ManagedBy"] == "terraform" && strcontains(output.update_kubeconfig_command, "--region us-east-1")
     error_message = "The kubeconfig command must name the provider's region."
   }
 
-  # The pods' grant covers secret:tenant-* and secret:registry-tenant-*; the boot
-  # secrets must fall outside it, which is what name_prefix's validation enforces.
   assert {
     condition     = !startswith(aws_secretsmanager_secret.db_password.name, "tenant") && !startswith(aws_secretsmanager_secret.db_password.name, "registry-tenant")
     error_message = "The boot secrets must not sit inside the tenant-* prefixes the application pods can read."
@@ -212,7 +199,7 @@ run "default_configuration" {
 
   assert {
     condition     = length(aws_route53_record.acm_validation) == 0 && length(aws_acm_certificate_validation.app) == 0
-    error_message = "With route53_zone_id unset the module must create no DNS records and add no validation waiter — a waiter would block this apply and every later one on a manual DNS step."
+    error_message = "Without a Route53 zone the module must create no DNS records or validation waiter; callers manage validation themselves."
   }
 
   assert {
@@ -240,9 +227,6 @@ run "single_nat_gateway_still_routes_every_az" {
     error_message = "single_nat_gateway must collapse to exactly one NAT gateway and one EIP."
   }
 
-  # The regression this guards: collapsing the NAT count without re-pointing the
-  # route tables leaves the second AZ's table indexing past the end of the gateway
-  # list, or silently drops its default route.
   assert {
     condition     = length(aws_route_table.private) == 2 && length(aws_route_table_association.private) == 2
     error_message = "Every AZ must keep its own private route table and association even when sharing one NAT gateway."
@@ -261,8 +245,6 @@ run "three_availability_zones" {
     error_message = "availability_zone_count must drive subnets and NAT gateways together."
   }
 
-  # A third AZ must extend the ranges, not renumber the first two — renumbering an
-  # existing subnet replaces it, and replacing a subnet replaces what runs in it.
   assert {
     condition     = aws_subnet.public[0].cidr_block == "10.0.0.0/20" && aws_subnet.public[2].cidr_block == "10.0.32.0/20"
     error_message = "Adding an AZ must append a new /20 and leave the existing subnet CIDRs untouched."
@@ -322,8 +304,6 @@ run "route53_zone_creates_records_and_waits" {
     route53_zone_id = "Z0123456789ABCDEFGHIJ"
   }
 
-  # With a hosted zone the module owns validation end to end, so a successful
-  # apply means TLS actually works rather than merely that a certificate exists.
   assert {
     condition     = length(aws_acm_certificate_validation.app) == 1
     error_message = "Setting route53_zone_id must add the validation waiter so the apply blocks until the certificate is ISSUED."
@@ -381,6 +361,94 @@ run "route53_zone_creates_records_and_waits" {
   }
 }
 
+run "create_route53_zone_gets_the_same_automation_as_an_existing_zone" {
+  command = plan
+
+  variables {
+    create_route53_zone = true
+  }
+
+  override_resource {
+    target          = aws_route53_zone.this
+    override_during = plan
+    values = {
+      zone_id      = "ZCREATED123456789"
+      name_servers = ["ns-1.awsdns.example", "ns-2.awsdns.example"]
+    }
+  }
+
+  override_resource {
+    target          = aws_acm_certificate.app
+    override_during = plan
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/example"
+      domain_validation_options = [
+        {
+          domain_name           = "pontem.example.com"
+          resource_record_name  = "_acme-challenge.pontem.example.com"
+          resource_record_type  = "CNAME"
+          resource_record_value = "validation.example.com"
+        },
+      ]
+    }
+  }
+
+  override_resource {
+    target          = aws_db_instance.this
+    override_during = plan
+    values = {
+      address = "db.example.com"
+    }
+  }
+
+  assert {
+    condition     = length(aws_route53_zone.this) == 1 && aws_route53_zone.this[0].name == "pontem.example.com"
+    error_message = "create_route53_zone must create exactly one hosted zone, named for app_domain_name."
+  }
+
+  assert {
+    condition     = length(aws_route53_record.acm_validation) == 1 && length(aws_acm_certificate_validation.app) == 1
+    error_message = "create_route53_zone must validate the certificate the same way an existing route53_zone_id does."
+  }
+
+  assert {
+    condition = try(
+      length(aws_iam_role.external_dns) == 1 &&
+      length(aws_iam_role_policy.external_dns) == 1 &&
+      length(aws_eks_pod_identity_association.external_dns) == 1 &&
+      one([
+        for statement in jsondecode(aws_iam_role_policy.external_dns[0].policy).Statement : statement.Resource
+        if contains(statement.Action, "route53:ChangeResourceRecordSets")
+      ]) == ["arn:aws:route53:::hostedzone/ZCREATED123456789"],
+      false,
+    )
+    error_message = "create_route53_zone must pass the new zone ID to the ExternalDNS IAM policy."
+  }
+
+  assert {
+    condition     = strcontains(output.helm_values, "zone-id-filter: \"ZCREATED123456789\"")
+    error_message = "create_route53_zone must pass the new zone ID to the rendered ExternalDNS values."
+  }
+
+  assert {
+    condition     = toset(output.route53_name_servers) == toset(["ns-1.awsdns.example", "ns-2.awsdns.example"])
+    error_message = "route53_name_servers must return the new zone's delegation servers."
+  }
+}
+
+run "create_route53_zone_and_route53_zone_id_are_mutually_exclusive" {
+  command = plan
+
+  variables {
+    create_route53_zone = true
+    route53_zone_id     = "Z0123456789ABCDEFGHIJ"
+  }
+
+  # Variable validation that refers to another variable needs Terraform 1.9;
+  # this module supports 1.6.
+  expect_failures = [aws_route53_zone.this]
+}
+
 run "name_prefix_flows_into_every_resource_name" {
   command = plan
 
@@ -388,8 +456,6 @@ run "name_prefix_flows_into_every_resource_name" {
     name_prefix = "acme-pontem"
   }
 
-  # name_prefix is the resources' identity: this is what makes the "changing it
-  # replaces the cluster and the database" warning in its description true.
   assert {
     condition     = aws_eks_cluster.this.name == "acme-pontem" && aws_db_instance.this.identifier == "acme-pontem"
     error_message = "The cluster and database must be named from name_prefix."

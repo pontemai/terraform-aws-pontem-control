@@ -1,7 +1,4 @@
-# Region and account id are read from the provider (locals.tf) rather than taken
-# as variables: a module should not second-guess the credentials and region its
-# caller configured, and two sources of truth for the region is a way to build
-# resources in one region and point the chart at another.
+# Region and account ID come from the provider so callers have one source of truth.
 
 # ----- Required: no defaults, because a wrong default here is dangerous -----
 
@@ -57,19 +54,13 @@ variable "name_prefix" {
     error_message = "name_prefix must be 3-32 lowercase alphanumeric-or-hyphen characters starting with a letter (it seeds RDS and EKS names, which are stricter than most)."
   }
 
-  # Checked separately from the character-class rule above so the message can say
-  # what is actually wrong. RDS rejects a doubled hyphen in an instance identifier,
-  # and it rejects it at instance creation — after the VPC, the NAT gateways, and a
-  # fifteen-minute cluster create have all succeeded.
+  # Keep the RDS-specific error separate so it is clear and arrives before creation.
   validation {
     condition     = !can(regex("--", var.name_prefix))
     error_message = "name_prefix must not contain two consecutive hyphens — RDS rejects them in a database identifier."
   }
 
-  # The application pods hold secretsmanager:GetSecretValue on secret:tenant-* and
-  # secret:registry-tenant-* (identity.tf). A prefix starting with either token
-  # would put this module's own secrets inside that grant, handing the pods the
-  # database password and the device signing key.
+  # Keep boot-secret names outside the tenant-secret grants in locals.tf.
   validation {
     condition     = !can(regex("^(registry-)?tenant", var.name_prefix))
     error_message = "name_prefix must not begin with \"tenant\" or \"registry-tenant\": those prefixes name the per-tenant secrets the application pods can already read, so the module's own database password and signing key would fall inside that grant."
@@ -233,7 +224,7 @@ variable "secret_recovery_window_days" {
 # ----- DNS / TLS -----
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID for app_domain_name. Set it to automate ACM validation and enable ExternalDNS with a Pod Identity role scoped to this zone and hostname. Leave it null to disable ExternalDNS and emit acm_validation_records for you to create wherever your DNS lives."
+  description = "ID of an existing Route53 hosted zone for app_domain_name. Set this or create_route53_zone to automate ACM validation and application DNS. Leave both unset to create the returned acm_validation_records yourself."
   type        = string
   default     = null
 
@@ -241,6 +232,12 @@ variable "route53_zone_id" {
     condition     = var.route53_zone_id == null || can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
     error_message = "route53_zone_id must be null or a Route53 hosted zone ID beginning with Z."
   }
+}
+
+variable "create_route53_zone" {
+  description = "Create a Route53 hosted zone for app_domain_name. Cannot be used with route53_zone_id. Delegate the hostname to route53_name_servers before the full apply; see the README."
+  type        = bool
+  default     = false
 }
 
 # ----- Kubernetes-side contract -----
@@ -264,16 +261,13 @@ variable "pod_identity_service_accounts" {
 
 # ----- Your identity provider -----
 #
-# All three are required and none is a secret — they are public metadata your users'
-# browsers already fetch. The API needs the issuer and audience; the admin
-# single-page app needs all three, which is why none has a default.
+# The OIDC issuer, audience, and client ID are public and have no defaults.
 
 variable "oidc_issuer" {
   description = "OIDC issuer URL, e.g. \"https://your-tenant.us.auth0.com/\". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there."
   type        = string
 
-  # Hostnames are case-insensitive, so mixed case is accepted here and lowercased
-  # before it reaches the admin app (locals.tf).
+  # The chart-values module lowercases this host for the admin app.
   validation {
     condition     = can(regex("^https://[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+/?$", var.oidc_issuer))
     error_message = "oidc_issuer must be an https origin with no path or port, e.g. \"https://your-tenant.us.auth0.com/\". A provider whose issuer carries a path (some Okta and Keycloak setups) cannot drive the admin app, which takes the host alone."
