@@ -36,7 +36,7 @@ application hostname.
 
 ## Before you start
 
-- Terraform >= 1.11.
+- Terraform >= 1.11.4.
 - Git, AWS CLI, and kubectl. Helm >= 3.17.
 - AWS credentials that can create the resources listed above. Keep the IAM role
   or user ARN behind those credentials; you will grant it access to Kubernetes.
@@ -368,14 +368,14 @@ make test    # terraform test only
 make docs    # regenerate the input/output tables in these READMEs
 ```
 
-Contributing requires Terraform 1.11 or newer.
+Contributing requires Terraform 1.11.4 or newer.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
 | Name | Version |
 | ---- | ------- |
-| terraform | >= 1.11.0 |
+| terraform | >= 1.11.4 |
 | aws | >= 6.45.0, < 7.0.0 |
 | random | ~> 3.9 |
 
