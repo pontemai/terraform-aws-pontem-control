@@ -94,6 +94,16 @@ module "pontem_control" {
 To create a hosted zone, omit `route53_zone_id` and set
 `create_route53_zone = true`. This requires the two-step apply below.
 
+Keep this root output from the complete example so the deploy command can read
+the new zone's name servers:
+
+```hcl
+output "route53_name_servers" {
+  description = "Name servers for a hosted zone created by the module."
+  value       = module.pontem_control.route53_name_servers
+}
+```
+
 Use the module version Pontem gives you. Do not source the `develop` branch.
 
 Terraform plans and state do not contain the generated database password or
