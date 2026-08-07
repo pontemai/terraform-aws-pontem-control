@@ -113,6 +113,7 @@ resource "aws_eks_cluster" "this" {
 
   # Auto Mode: these three blocks toggle together — enabling compute without
   # elastic load balancing and block storage is rejected.
+  # EKS creates the node role's access entry and policy association.
   compute_config {
     enabled       = true
     node_pools    = ["general-purpose", "system"]
@@ -182,31 +183,6 @@ resource "aws_iam_role_policy_attachment" "auto_node_ecr_pull" {
 }
 
 # ----- Access entries -----
-
-# How Auto Mode nodes authenticate to the cluster: an EC2-type access entry with
-# the AmazonEKSAutoNodePolicy. EKS sometimes creates this entry itself when Auto
-# Mode enables with the built-in node pools. If your apply fails here with
-# ResourceInUseException, the entry already exists — import it, do not retry.
-# The README's troubleshooting section has the commands.
-resource "aws_eks_access_entry" "auto_node" {
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = aws_iam_role.auto_node.arn
-  type          = "EC2"
-
-  tags = local.tags
-}
-
-resource "aws_eks_access_policy_association" "auto_node" {
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = aws_iam_role.auto_node.arn
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAutoNodePolicy"
-
-  access_scope {
-    type = "cluster"
-  }
-
-  depends_on = [aws_eks_access_entry.auto_node]
-}
 
 resource "aws_eks_access_entry" "admin" {
   for_each = toset(var.cluster_admin_principal_arns)

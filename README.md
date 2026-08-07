@@ -288,16 +288,6 @@ JWTs; those devices must re-enroll.
 
 ## Troubleshooting
 
-**`terraform apply` reports `ResourceInUseException` for
-`aws_eks_access_entry.auto_node`.** Import the access resources created by EKS:
-
-```bash
-terraform import 'aws_eks_access_entry.auto_node' \
-  '<cluster-name>:<node-role-arn>'
-terraform import 'aws_eks_access_policy_association.auto_node' \
-  '<cluster-name>#<node-role-arn>#arn:aws:eks::aws:cluster-access-policy/AmazonEKSAutoNodePolicy'
-```
-
 **The ExternalSecret does not report `SecretSynced`.** Confirm the release uses
 the namespace from `terraform output -raw namespace`; the External Secrets
 Operator Pod Identity association is bound to that namespace and the
@@ -397,9 +387,7 @@ and `strcontains`.
 | [aws_db_subnet_group.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_subnet_group) | resource |
 | [aws_eip.nat](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eip) | resource |
 | [aws_eks_access_entry.admin](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_access_entry) | resource |
-| [aws_eks_access_entry.auto_node](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_access_entry) | resource |
 | [aws_eks_access_policy_association.admin](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_access_policy_association) | resource |
-| [aws_eks_access_policy_association.auto_node](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_access_policy_association) | resource |
 | [aws_eks_cluster.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_cluster) | resource |
 | [aws_eks_pod_identity_association.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_eks_pod_identity_association.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
