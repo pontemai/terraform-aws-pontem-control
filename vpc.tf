@@ -44,6 +44,16 @@ resource "aws_vpc" "this" {
   })
 }
 
+resource "aws_default_security_group" "this" {
+  vpc_id  = aws_vpc.this.id
+  ingress = []
+  egress  = []
+
+  tags = merge(local.tags, {
+    Name = "${var.name_prefix}-default"
+  })
+}
+
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 
