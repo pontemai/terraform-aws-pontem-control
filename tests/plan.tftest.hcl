@@ -74,6 +74,11 @@ run "default_configuration" {
   }
 
   assert {
+    condition     = length(aws_default_security_group.this.ingress) == 0 && length(aws_default_security_group.this.egress) == 0
+    error_message = "The VPC default security group must have no ingress or egress rules so unused resources cannot communicate through its permissive AWS defaults."
+  }
+
+  assert {
     condition     = aws_secretsmanager_secret.db_password.recovery_window_in_days == 30
     error_message = "Secrets must default to a non-zero recovery window; at 0 a deleted secret is unrecoverable."
   }
