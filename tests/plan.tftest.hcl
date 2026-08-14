@@ -239,12 +239,17 @@ run "default_configuration" {
 
   assert {
     condition = try(
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StartQuery")]).effect == "Allow" &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StartQuery")]).actions) == toset(["logs:StartQuery", "logs:GetQueryResults"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StartQuery")]).resources) == toset([aws_cloudwatch_log_group.device_telemetry.arn]) &&
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StartQuery")]).condition).values) == toset(["api", "mcp"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StopQuery")]).resources) == toset(["*"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StopQuery")]).actions) == toset(["logs:StopQuery"]) &&
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StopQuery")]).effect == "Allow" &&
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StopQuery")]).condition).values) == toset(["api", "mcp"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:CreateLogStream")]).resources) == toset(["${aws_cloudwatch_log_group.device_telemetry.arn}:log-stream:*"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:CreateLogStream")]).actions) == toset(["logs:CreateLogStream"]) &&
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:CreateLogStream")]).effect == "Allow" &&
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:CreateLogStream")]).condition).values) == toset(["api"]),
       false,
     )
@@ -253,10 +258,13 @@ run "default_configuration" {
 
   assert {
     condition = try(
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:GetMetricData")]).effect == "Allow" &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:GetMetricData")]).resources) == toset(["*"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:GetMetricData")]).actions) == toset(["cloudwatch:GetMetricData", "cloudwatch:ListMetrics"]) &&
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:GetMetricData")]).condition).values) == toset(["api", "worker", "mcp"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).resources) == toset(["*"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).actions) == toset(["cloudwatch:PutMetricData"]) &&
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).effect == "Allow" &&
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).condition).values) == toset(["worker"]),
       false,
     )
@@ -265,9 +273,13 @@ run "default_configuration" {
 
   assert {
     condition = try(
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).effect == "Allow" &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).actions) == toset(["sts:AssumeRole"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).resources) == toset([aws_iam_role.device_telemetry_writer.arn]) &&
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).condition).values) == toset(["api"]) &&
       toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).principals).identifiers) == toset([aws_iam_role.cp_runtime.arn]) &&
+      one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).effect == "Allow" &&
+      toset(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).actions) == toset(["sts:AssumeRole"]) &&
       toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).condition).values) == toset(["api"]),
       false,
     )
@@ -276,7 +288,12 @@ run "default_configuration" {
 
   assert {
     condition = try(
+      length(data.aws_iam_policy_document.device_telemetry_writer.statement) == 2 &&
+      one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "logs:PutLogEvents")]).effect == "Allow" &&
+      toset(one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "logs:PutLogEvents")]).actions) == toset(["logs:PutLogEvents"]) &&
       toset(one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "logs:PutLogEvents")]).resources) == toset(["${aws_cloudwatch_log_group.device_telemetry.arn}:log-stream:*"]) &&
+      one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).effect == "Allow" &&
+      toset(one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).actions) == toset(["cloudwatch:PutMetricData"]) &&
       toset(one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).resources) == toset(["*"]),
       false,
     )
