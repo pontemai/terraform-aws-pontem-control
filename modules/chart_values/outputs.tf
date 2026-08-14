@@ -18,6 +18,8 @@ output "helm_values" {
 
     db_password_secret_name            = var.db_password_secret_name
     device_jwt_signing_key_secret_name = var.device_jwt_signing_key_secret_name
+    device_telemetry_log_group_name    = var.device_telemetry_log_group_name
+    device_telemetry_writer_role_arn   = var.device_telemetry_writer_role_arn
 
     db_host        = var.db_host
     db_name        = var.db_name

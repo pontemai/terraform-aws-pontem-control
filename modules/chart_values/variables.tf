@@ -34,6 +34,16 @@ variable "device_jwt_signing_key_secret_name" {
   type        = string
 }
 
+variable "device_telemetry_log_group_name" {
+  description = "CloudWatch log group for device logs; becomes observability.aws.logGroup."
+  type        = string
+}
+
+variable "device_telemetry_writer_role_arn" {
+  description = "Role assumed for device telemetry writes; becomes observability.aws.writerRoleArn."
+  type        = string
+}
+
 variable "db_host" {
   description = "RDS endpoint hostname, no port."
   type        = string

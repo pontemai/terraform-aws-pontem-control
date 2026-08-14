@@ -13,6 +13,30 @@ variables {
   oidc_client_id                       = "ExampleSpaClientId"
 }
 
+override_resource {
+  target          = aws_cloudwatch_log_group.device_telemetry
+  override_during = plan
+  values = {
+    arn = "arn:aws:logs:us-east-1:123456789012:log-group:/pontem-control/device"
+  }
+}
+
+override_resource {
+  target          = aws_iam_role.cp_runtime
+  override_during = plan
+  values = {
+    arn = "arn:aws:iam::123456789012:role/pontem-control-cp-runtime"
+  }
+}
+
+override_resource {
+  target          = aws_iam_role.device_telemetry_writer
+  override_during = plan
+  values = {
+    arn = "arn:aws:iam::123456789012:role/pontem-control-device-telemetry-writer"
+  }
+}
+
 run "default_configuration" {
   command = plan
 
@@ -202,6 +226,61 @@ run "default_configuration" {
       false,
     )
     error_message = "Each Pod Identity role must trust only its exact cluster, namespace, and service accounts."
+  }
+
+  assert {
+    condition = try(
+      aws_cloudwatch_log_group.device_telemetry.name == "/pontem-control/device" &&
+      aws_cloudwatch_log_group.device_telemetry.retention_in_days == 90,
+      false,
+    )
+    error_message = "The device telemetry log group must derive from name_prefix and use the module's finite retention."
+  }
+
+  assert {
+    condition = try(
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StartQuery")]).actions) == toset(["logs:StartQuery", "logs:GetQueryResults"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StartQuery")]).resources) == toset([aws_cloudwatch_log_group.device_telemetry.arn]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StartQuery")]).condition).values) == toset(["api", "mcp"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StopQuery")]).resources) == toset(["*"]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:StopQuery")]).condition).values) == toset(["api", "mcp"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:CreateLogStream")]).resources) == toset(["${aws_cloudwatch_log_group.device_telemetry.arn}:log-stream:*"]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "logs:CreateLogStream")]).condition).values) == toset(["api"]),
+      false,
+    )
+    error_message = "Only api and mcp may read device logs, and only api may create device log streams."
+  }
+
+  assert {
+    condition = try(
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:GetMetricData")]).resources) == toset(["*"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:GetMetricData")]).actions) == toset(["cloudwatch:GetMetricData", "cloudwatch:ListMetrics"]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:GetMetricData")]).condition).values) == toset(["api", "worker", "mcp"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).resources) == toset(["*"]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).condition).values) == toset(["worker"]),
+      false,
+    )
+    error_message = "API, worker, and mcp may read device metrics, but only worker may publish runtime metrics."
+  }
+
+  assert {
+    condition = try(
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).resources) == toset([aws_iam_role.device_telemetry_writer.arn]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).condition).values) == toset(["api"]) &&
+      toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).principals).identifiers) == toset([aws_iam_role.cp_runtime.arn]) &&
+      toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).condition).values) == toset(["api"]),
+      false,
+    )
+    error_message = "Only api sessions of the runtime role may assume the device telemetry writer role."
+  }
+
+  assert {
+    condition = try(
+      toset(one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "logs:PutLogEvents")]).resources) == toset(["${aws_cloudwatch_log_group.device_telemetry.arn}:log-stream:*"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.device_telemetry_writer.statement : statement if contains(statement.actions, "cloudwatch:PutMetricData")]).resources) == toset(["*"]),
+      false,
+    )
+    error_message = "Device credentials may write only log events in the device group and CloudWatch metrics."
   }
 
   assert {

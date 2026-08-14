@@ -37,6 +37,8 @@ comments.
 | db\_port | RDS Postgres port. | `number` | n/a | yes |
 | db\_user | Application database user. | `string` | n/a | yes |
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name containing DEVICE\_JWT\_SIGNING\_KEY; becomes awsTurnkey.deviceJwtSigningKeySecretName. | `string` | n/a | yes |
+| device\_telemetry\_log\_group\_name | CloudWatch log group for device logs; becomes observability.aws.logGroup. | `string` | n/a | yes |
+| device\_telemetry\_writer\_role\_arn | Role assumed for device telemetry writes; becomes observability.aws.writerRoleArn. | `string` | n/a | yes |
 | oidc\_audience | OIDC API audience, rendered as both auth.oidc.audience (the API's validation) and admin.auth0.audience (what the browser requests tokens for). One value, two consumers — they have to agree. | `string` | n/a | yes |
 | oidc\_client\_id | Public SPA client ID, rendered as admin.auth0.clientId. Browser-only. | `string` | n/a | yes |
 | oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. The admin app is configured with the host on its own, which is derived from this. | `string` | n/a | yes |
