@@ -171,7 +171,7 @@ resource "aws_eks_pod_identity_association" "cp_runtime" {
 data "aws_iam_policy_document" "device_telemetry_writer_assume" {
   statement {
     effect  = "Allow"
-    actions = ["sts:AssumeRole"]
+    actions = ["sts:AssumeRole", "sts:TagSession"]
 
     principals {
       type        = "AWS"

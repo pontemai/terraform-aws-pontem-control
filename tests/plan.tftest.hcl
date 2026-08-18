@@ -279,7 +279,7 @@ run "default_configuration" {
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).condition).values) == toset(["api"]) &&
       toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).principals).identifiers) == toset([aws_iam_role.cp_runtime.arn]) &&
       one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).effect == "Allow" &&
-      toset(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).actions) == toset(["sts:AssumeRole"]) &&
+      toset(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).actions) == toset(["sts:AssumeRole", "sts:TagSession"]) &&
       toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).condition).values) == toset(["api"]),
       false,
     )
