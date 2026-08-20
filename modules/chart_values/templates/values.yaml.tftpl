@@ -81,6 +81,12 @@ blobStorage:
 secretsBackend:
   type: aws
 
+observability:
+  type: aws
+  aws:
+    writerRoleArn: "${device_telemetry_writer_role_arn}"
+    logGroup: "${device_telemetry_log_group_name}"
+
 ingress:
   domain: ${app_domain_name}
   # Turnkey mode creates this IngressClass for EKS Auto Mode's ALB controller.
@@ -120,8 +126,6 @@ admin:
 
 # The unset chart keys most likely to raise a question, and why each stays unset:
 #
-#   observability  Fleet metrics and logs need a GCP backend these pods have no
-#                  identity for, so device telemetry endpoints stay off.
 #   tracing        Control-plane traces go to Pontem's Honeycomb on a shared key;
 #                  it is not a backend to point at your own account.
 #   agentCatalog   Set by Pontem alongside wifAudience if you are subscribing to

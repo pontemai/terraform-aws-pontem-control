@@ -10,6 +10,8 @@ module "chart_values" {
 
   db_password_secret_name            = aws_secretsmanager_secret.db_password.name
   device_jwt_signing_key_secret_name = aws_secretsmanager_secret.device_jwt_signing_key.name
+  device_telemetry_log_group_name    = aws_cloudwatch_log_group.device_telemetry.name
+  device_telemetry_writer_role_arn   = aws_iam_role.device_telemetry_writer.arn
 
   db_host = aws_db_instance.this.address
   db_port = aws_db_instance.this.port

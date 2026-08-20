@@ -1,10 +1,11 @@
 # Auto Mode includes the EKS Pod Identity agent. Associations match the chart's
 # service-account names and install namespace; a mismatch starts pods without AWS
-# credentials. The chart uses the bare names "api" and "worker".
+# credentials. The chart uses the bare names "api", "worker", and optional "mcp".
 
 # ----- Control-plane runtime role -----
 
-# One role supplies tenant-secret access and the AWS identity used for GCP federation.
+# One role supplies tenant-secret and telemetry access plus the AWS identity used
+# for GCP federation. Session-tag conditions keep workload permissions separate.
 
 locals {
   pod_identity_assume_role_policies = {
@@ -39,8 +40,15 @@ locals {
 
 resource "aws_iam_role" "cp_runtime" {
   name               = "${var.name_prefix}-cp-runtime"
-  description        = "Runtime identity for the pontem-control api/worker pods in ${var.name_prefix}, assumed via EKS Pod Identity: tenant-secret CRUD in Secrets Manager, and the AWS identity Pontem's GCP Workload Identity Federation provider trusts."
+  description        = "Runtime identity for the pontem-control api, worker, and optional mcp pods in ${var.name_prefix}, assumed via EKS Pod Identity."
   assume_role_policy = local.pod_identity_assume_role_policies.cp_runtime
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_log_group" "device_telemetry" {
+  name              = "/${var.name_prefix}/device"
+  retention_in_days = var.cloudwatch_log_retention_days
 
   tags = local.tags
 }
@@ -60,6 +68,84 @@ data "aws_iam_policy_document" "cp_runtime" {
     ]
     resources = local.tenant_secret_arns
   }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:StartQuery",
+      "logs:GetQueryResults",
+    ]
+    resources = [aws_cloudwatch_log_group.device_telemetry.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api", "mcp"]
+    }
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["logs:StopQuery"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api", "mcp"]
+    }
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream"]
+    resources = ["${aws_cloudwatch_log_group.device_telemetry.arn}:log-stream:*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api"]
+    }
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:ListMetrics",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api", "worker", "mcp"]
+    }
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["worker"]
+    }
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [aws_iam_role.device_telemetry_writer.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "cp_runtime" {
@@ -78,6 +164,54 @@ resource "aws_eks_pod_identity_association" "cp_runtime" {
   role_arn        = aws_iam_role.cp_runtime.arn
 
   tags = local.tags
+}
+
+# ----- Device telemetry writer role -----
+
+data "aws_iam_policy_document" "device_telemetry_writer_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.cp_runtime.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api"]
+    }
+  }
+}
+
+resource "aws_iam_role" "device_telemetry_writer" {
+  name               = "${var.name_prefix}-device-telemetry-writer"
+  description        = "Short-lived device access to publish logs and metrics for ${var.name_prefix}."
+  assume_role_policy = data.aws_iam_policy_document.device_telemetry_writer_assume.json
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "device_telemetry_writer" {
+  statement {
+    effect    = "Allow"
+    actions   = ["logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.device_telemetry.arn}:log-stream:*"]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "device_telemetry_writer" {
+  name   = "${var.name_prefix}-device-telemetry-writer"
+  role   = aws_iam_role.device_telemetry_writer.id
+  policy = data.aws_iam_policy_document.device_telemetry_writer.json
 }
 
 # ----- External Secrets Operator role -----

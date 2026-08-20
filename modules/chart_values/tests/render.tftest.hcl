@@ -15,6 +15,8 @@ variables {
 
   db_password_secret_name            = "pontem-control-db-password"
   device_jwt_signing_key_secret_name = "pontem-control-device-jwt-signing-key"
+  device_telemetry_log_group_name    = "/pontem-control/device"
+  device_telemetry_writer_role_arn   = "arn:aws:iam::123456789012:role/pontem-control-device-telemetry-writer"
 
   db_host = "pontem-control.abcdefghijkl.us-east-1.rds.amazonaws.com"
   db_port = 5432
@@ -38,6 +40,17 @@ run "values_satisfy_the_chart_contract" {
   assert {
     condition     = yamldecode(output.helm_values).aws.region == "us-east-1"
     error_message = "aws.region must be the region the resources were created in — the secrets backend and the GCP federation both read it."
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values).observability == {
+      type = "aws"
+      aws = {
+        logGroup      = "/pontem-control/device"
+        writerRoleArn = "arn:aws:iam::123456789012:role/pontem-control-device-telemetry-writer"
+      }
+    }, false)
+    error_message = "observability must enable AWS and identify the module-owned device log group and writer role."
   }
 
   assert {

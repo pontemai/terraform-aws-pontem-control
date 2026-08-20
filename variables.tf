@@ -129,7 +129,7 @@ variable "cluster_deletion_protection" {
 }
 
 variable "cloudwatch_log_retention_days" {
-  description = "Retention for the module's EKS, RDS, and VPC Flow Log groups. 0 keeps them forever."
+  description = "Retention for the module's device, EKS, RDS, and VPC Flow Log groups. 0 keeps them forever."
   type        = number
   default     = 90
 
