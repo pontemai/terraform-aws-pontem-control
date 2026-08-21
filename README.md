@@ -385,7 +385,7 @@ Contributing requires Terraform 1.11.4 or newer.
 
 | Name | Version |
 | ---- | ------- |
-| aws | 6.60.0 |
+| aws | 6.61.0 |
 
 ## Resources
 
