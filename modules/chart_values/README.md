@@ -39,9 +39,9 @@ comments.
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name containing DEVICE\_JWT\_SIGNING\_KEY; becomes awsTurnkey.deviceJwtSigningKeySecretName. | `string` | n/a | yes |
 | device\_telemetry\_log\_group\_name | CloudWatch log group for device logs; becomes observability.aws.logGroup. | `string` | n/a | yes |
 | device\_telemetry\_writer\_role\_arn | Role assumed for device telemetry writes; becomes observability.aws.writerRoleArn. | `string` | n/a | yes |
-| oidc\_audience | OIDC API audience, rendered as both auth.oidc.audience (the API's validation) and admin.auth0.audience (what the browser requests tokens for). One value, two consumers — they have to agree. | `string` | n/a | yes |
-| oidc\_client\_id | Public SPA client ID, rendered as admin.auth0.clientId. Browser-only. | `string` | n/a | yes |
-| oidc\_issuer | OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. The admin app is configured with the host on its own, which is derived from this. | `string` | n/a | yes |
+| oidc\_audience | OIDC API audience, rendered for both the API's validation and the admin app's token request. One value, two consumers — they have to agree. | `string` | n/a | yes |
+| oidc\_client\_id | Public SPA client ID, rendered as admin.oidc.clientId. Browser-only. | `string` | n/a | yes |
+| oidc\_issuer | OIDC issuer URL. | `string` | n/a | yes |
 | wif\_audience | GCP Workload Identity Federation audience, rendered as gcp.wifAudience. | `string` | n/a | yes |
 | route53\_zone\_id | Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective zone-id-filter argument. Null disables ExternalDNS. | `string` | `null` | no |
 

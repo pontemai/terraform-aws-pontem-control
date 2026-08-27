@@ -182,28 +182,25 @@ run "values_satisfy_the_chart_contract" {
   }
 
   assert {
-    condition     = yamldecode(output.helm_values).admin.auth0.clientId == "ExampleSpaClientId"
-    error_message = "admin.auth0.clientId must be rendered; without it the admin UI is a blank page and no pod reports unhealthy."
+    condition     = yamldecode(output.helm_values).admin.oidc.clientId == "ExampleSpaClientId"
+    error_message = "admin.oidc.clientId must be rendered; without it the admin UI is a blank page and no pod reports unhealthy."
   }
 
-  # The host alone, with no scheme: the admin container builds "https://<host>/"
-  # from it, so a scheme here yields "https://https://…" and a login redirect to
-  # nowhere.
   assert {
-    condition     = yamldecode(output.helm_values).admin.auth0.domain == "example.us.auth0.com"
-    error_message = "admin.auth0.domain must be the bare host with no scheme or trailing slash."
+    condition     = yamldecode(output.helm_values).admin.oidc.issuer == yamldecode(output.helm_values).auth.oidc.issuer
+    error_message = "admin.oidc.issuer must equal auth.oidc.issuer so the browser and API use the same provider."
   }
 
   # Same audience the API validates against. If these diverge the UI signs in
   # successfully and then every API call it makes returns 401.
   assert {
-    condition     = yamldecode(output.helm_values).admin.auth0.audience == yamldecode(output.helm_values).auth.oidc.audience
-    error_message = "admin.auth0.audience must equal auth.oidc.audience, or the API rejects every token the UI obtains."
+    condition     = yamldecode(output.helm_values).admin.oidc.audience == yamldecode(output.helm_values).auth.oidc.audience
+    error_message = "admin.oidc.audience must equal auth.oidc.audience, or the API rejects every token the UI obtains."
   }
 
   assert {
-    condition     = yamldecode(output.helm_values).admin.authMode == "auth0"
-    error_message = "admin.authMode must be auth0; `local` is a development-only mode that bypasses authentication."
+    condition     = yamldecode(output.helm_values).admin.authMode == "oidc"
+    error_message = "admin.authMode must use provider-neutral OIDC; `auth0` is a deprecated compatibility mode."
   }
 
   # The chart rejects an empty wifAudience but accepts any non-empty string, so
@@ -247,27 +244,21 @@ run "route53_disabled_omits_external_dns_configuration" {
   }
 }
 
-run "issuer_host_is_lowercased_for_the_admin_app" {
+run "path_bearing_issuer_is_passed_verbatim_to_both_consumers" {
   command = plan
 
   variables {
-    oidc_issuer = "https://Example.US.auth0.com/"
+    oidc_issuer = "https://example.okta.com/oauth2/default"
   }
 
-  # Hostnames are case-insensitive, so a mixed-case issuer is a legitimate thing to
-  # be given. The admin app compares the host it holds against what the provider
-  # returns, so it has to arrive lowercased and stripped of scheme and trailing
-  # slash.
   assert {
-    condition     = yamldecode(output.helm_values).admin.auth0.domain == "example.us.auth0.com"
-    error_message = "A mixed-case issuer must reach admin.auth0.domain lowercased, with the scheme and any trailing slash removed."
+    condition     = yamldecode(output.helm_values).admin.oidc.issuer == "https://example.okta.com/oauth2/default"
+    error_message = "A path-bearing issuer must reach the admin app verbatim for OIDC discovery."
   }
 
-  # The issuer the API validates against is passed through untouched: it must match
-  # the provider's own `iss` claim byte for byte, which lowercasing could break.
   assert {
-    condition     = yamldecode(output.helm_values).auth.oidc.issuer == "https://Example.US.auth0.com/"
-    error_message = "auth.oidc.issuer must be passed through verbatim, not normalised — it is compared against the token's iss claim."
+    condition     = yamldecode(output.helm_values).auth.oidc.issuer == "https://example.okta.com/oauth2/default"
+    error_message = "A path-bearing issuer must reach the API verbatim for discovery and iss validation."
   }
 }
 

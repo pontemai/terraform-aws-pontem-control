@@ -1,12 +1,3 @@
-locals {
-  # The admin app is configured with the identity provider's HOST, not its issuer
-  # URL, and rebuilds "https://<host>/" from it. trimprefix and trimsuffix rather
-  # than replace(): replace would strip a slash from anywhere in the string, so a
-  # value the caller's validation should have rejected would be silently mangled
-  # into a plausible-looking host instead of failing.
-  oidc_domain = trimsuffix(trimprefix(lower(var.oidc_issuer), "https://"), "/")
-}
-
 output "helm_values" {
   description = "Rendered pontem-control chart values for this deployment."
   value = templatefile("${path.module}/templates/values.yaml.tftpl", {
@@ -27,7 +18,6 @@ output "helm_values" {
     db_user        = var.db_user
     oidc_audience  = var.oidc_audience
     oidc_client_id = var.oidc_client_id
-    oidc_domain    = local.oidc_domain
     oidc_issuer    = var.oidc_issuer
     wif_audience   = var.wif_audience
   })
