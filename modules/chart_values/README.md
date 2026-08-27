@@ -41,7 +41,7 @@ comments.
 | device\_telemetry\_writer\_role\_arn | Role assumed for device telemetry writes; becomes observability.aws.writerRoleArn. | `string` | n/a | yes |
 | oidc\_audience | OIDC API audience, rendered for both the API's validation and the admin app's token request. One value, two consumers — they have to agree. | `string` | n/a | yes |
 | oidc\_client\_id | Public SPA client ID, rendered as admin.oidc.clientId. Browser-only. | `string` | n/a | yes |
-| oidc\_issuer | OIDC issuer URL, rendered verbatim for both the API and admin app. | `string` | n/a | yes |
+| oidc\_issuer | OIDC issuer URL. | `string` | n/a | yes |
 | wif\_audience | GCP Workload Identity Federation audience, rendered as gcp.wifAudience. | `string` | n/a | yes |
 | route53\_zone\_id | Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective zone-id-filter argument. Null disables ExternalDNS. | `string` | `null` | no |
 

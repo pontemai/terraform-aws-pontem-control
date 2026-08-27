@@ -65,7 +65,7 @@ variable "db_user" {
 }
 
 variable "oidc_issuer" {
-  description = "OIDC issuer URL, rendered verbatim for both the API and admin app."
+  description = "OIDC issuer URL."
   type        = string
 }
 

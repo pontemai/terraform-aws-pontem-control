@@ -319,7 +319,7 @@ variable "pod_identity_service_accounts" {
 # The OIDC issuer, audience, and client ID are public and have no defaults.
 
 variable "oidc_issuer" {
-  description = "OIDC issuer URL, e.g. \"https://your-tenant.us.auth0.com/\" or \"https://your-org.okta.com/oauth2/default\". The API and admin app use it verbatim for OIDC discovery and token validation."
+  description = "OIDC issuer URL, e.g. \"https://your-tenant.us.auth0.com/\" or \"https://your-org.okta.com/oauth2/default\"."
   type        = string
 
   validation {
