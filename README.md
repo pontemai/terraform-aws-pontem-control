@@ -42,8 +42,9 @@ application hostname.
 - A hostname for the control plane and access to its DNS. You can use an existing
   Route53 hosted zone, have this module create one, or manage the records
   yourself.
-- An OIDC issuer, API audience, and public SPA client ID. The issuer must be a
-  bare HTTPS origin with no path or port. Allow
+- An OIDC issuer, API audience, and public SPA client ID. The issuer must be an
+  HTTPS URL with no port, query, or fragment; path-bearing issuers such as Okta
+  custom authorization servers are supported. Allow
   `https://<your-hostname>/admin/` as both a sign-in and sign-out redirect URI.
   Allow `https://<your-hostname>` as a web origin. The provider must issue
   refresh tokens for `offline_access`. In Auth0, enable **Allow Offline Access**
@@ -385,7 +386,7 @@ Contributing requires Terraform 1.11.4 or newer.
 
 | Name | Version |
 | ---- | ------- |
-| aws | 6.61.0 |
+| aws | 6.62.0 |
 
 ## Resources
 
@@ -461,7 +462,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | cluster\_endpoint\_public\_access\_cidrs | CIDRs allowed to reach the public EKS API endpoint. Anything outside them cannot reach the Kubernetes API at all; the endpoint is also IAM-gated independently of this list. ["0.0.0.0/0"] allows every source. | `list(string)` | n/a | yes |
 | oidc\_audience | OIDC API audience the control plane validates access tokens against, and that the admin app requests tokens for. These must be the same value or the API rejects every token the UI sends. | `string` | n/a | yes |
 | oidc\_client\_id | Client ID of the public single-page-app client the admin UI signs in with. Used only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy. | `string` | n/a | yes |
-| oidc\_issuer | OIDC issuer URL, e.g. "https://your-tenant.us.auth0.com/". Must be a bare https origin with no path: the admin app is configured with the host on its own, which this module derives by stripping the scheme, so an issuer with a path cannot be expressed there. | `string` | n/a | yes |
+| oidc\_issuer | OIDC issuer URL, e.g. "https://your-tenant.us.auth0.com/" or "https://your-org.okta.com/oauth2/default". The API and admin app use it verbatim for OIDC discovery and token validation. | `string` | n/a | yes |
 | availability\_zone\_count | How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them. | `number` | `2` | no |
 | aws\_organization\_id | Optional AWS Organizations ID (for example, o-abc123def456). When set, Pod Identity roles also require their source to belong to this organization. | `string` | `null` | no |
 | cloudwatch\_log\_retention\_days | Retention for the module's device, EKS, RDS, and VPC Flow Log groups. 0 keeps them forever. | `number` | `90` | no |

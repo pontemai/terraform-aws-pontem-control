@@ -114,10 +114,9 @@ admin:
   # it needs its own client configuration and cannot read any of this from the
   # Secret. All three values must be present or the page fails to start, and it
   # fails as a blank page — every pod stays healthy and /health keeps answering.
-  # `domain` is the host alone; the container builds "https://<host>/" from it.
-  authMode: auth0
-  auth0:
-    domain: ${oidc_domain}
+  authMode: oidc
+  oidc:
+    issuer: "${oidc_issuer}"
     clientId: "${oidc_client_id}"
     audience: "${oidc_audience}"
   service:

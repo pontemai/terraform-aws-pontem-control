@@ -205,16 +205,41 @@ run "rejects_storage_ceiling_below_initial_size" {
   expect_failures = [var.db_max_allocated_storage]
 }
 
-run "rejects_issuer_with_a_path" {
+run "accepts_issuer_with_a_path" {
   command = plan
 
   variables {
     oidc_issuer = "https://example.okta.com/oauth2/default"
   }
+}
 
-  # The admin app takes the identity provider's host alone and rebuilds the issuer
-  # URL from it, so an issuer carrying a path cannot be represented there. Failing
-  # here beats an admin UI that redirects to a login page that does not exist.
+run "rejects_issuer_with_a_port" {
+  command = plan
+
+  variables {
+    oidc_issuer = "https://example.okta.com:8443/oauth2/default"
+  }
+
+  expect_failures = [var.oidc_issuer]
+}
+
+run "rejects_issuer_with_a_query" {
+  command = plan
+
+  variables {
+    oidc_issuer = "https://example.okta.com/oauth2/default?tenant=acme"
+  }
+
+  expect_failures = [var.oidc_issuer]
+}
+
+run "rejects_issuer_with_a_fragment" {
+  command = plan
+
+  variables {
+    oidc_issuer = "https://example.okta.com/oauth2/default#issuer"
+  }
+
   expect_failures = [var.oidc_issuer]
 }
 

@@ -65,17 +65,17 @@ variable "db_user" {
 }
 
 variable "oidc_issuer" {
-  description = "OIDC issuer URL, rendered as auth.oidc.issuer for the API's token validation. The admin app is configured with the host on its own, which is derived from this."
+  description = "OIDC issuer URL, rendered verbatim for both the API and admin app."
   type        = string
 }
 
 variable "oidc_audience" {
-  description = "OIDC API audience, rendered as both auth.oidc.audience (the API's validation) and admin.auth0.audience (what the browser requests tokens for). One value, two consumers — they have to agree."
+  description = "OIDC API audience, rendered for both the API's validation and the admin app's token request. One value, two consumers — they have to agree."
   type        = string
 }
 
 variable "oidc_client_id" {
-  description = "Public SPA client ID, rendered as admin.auth0.clientId. Browser-only."
+  description = "Public SPA client ID, rendered as admin.oidc.clientId. Browser-only."
   type        = string
 }
 
