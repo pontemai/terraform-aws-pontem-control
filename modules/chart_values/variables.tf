@@ -13,6 +13,12 @@ variable "acm_certificate_arn" {
   type        = string
 }
 
+variable "alb_scheme" {
+  description = "ALB scheme; becomes awsTurnkey.scheme."
+  type        = string
+  default     = "internet-facing"
+}
+
 variable "cluster_name" {
   description = "Stable EKS cluster name; becomes externalDns.txtOwnerId."
   type        = string

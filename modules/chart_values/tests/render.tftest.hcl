@@ -56,6 +56,7 @@ run "values_satisfy_the_chart_contract" {
   assert {
     condition = try(yamldecode(output.helm_values).awsTurnkey == {
       enabled                       = true
+      scheme                        = "internet-facing"
       certificateArn                = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
       dbPasswordSecretName          = "pontem-control-db-password"
       deviceJwtSigningKeySecretName = "pontem-control-device-jwt-signing-key"
@@ -222,6 +223,19 @@ run "values_satisfy_the_chart_contract" {
       "external-secrets", "externalDns",
     ])) == 0
     error_message = "helm_values contains a top-level key the chart's values.schema.json does not define; the schema sets additionalProperties=false, so the install would be rejected."
+  }
+}
+
+run "internal_alb_scheme_is_rendered" {
+  command = plan
+
+  variables {
+    alb_scheme = "internal"
+  }
+
+  assert {
+    condition     = yamldecode(output.helm_values).awsTurnkey.scheme == "internal"
+    error_message = "awsTurnkey.scheme must pass through to the chart."
   }
 }
 

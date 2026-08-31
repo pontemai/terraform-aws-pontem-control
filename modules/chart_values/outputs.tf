@@ -2,6 +2,7 @@ output "helm_values" {
   description = "Rendered pontem-control chart values for this deployment."
   value = templatefile("${path.module}/templates/values.yaml.tftpl", {
     app_domain_name = var.app_domain_name
+    alb_scheme      = var.alb_scheme
     aws_region      = var.aws_region
     certificate_arn = var.acm_certificate_arn
     cluster_name    = var.cluster_name

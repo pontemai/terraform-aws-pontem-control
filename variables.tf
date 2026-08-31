@@ -286,6 +286,17 @@ variable "create_route53_zone" {
 
 # ----- Kubernetes-side contract -----
 
+variable "alb_scheme" {
+  description = "ALB scheme for the turnkey chart. Use internal for an ALB reachable only from the VPC."
+  type        = string
+  default     = "internet-facing"
+
+  validation {
+    condition     = contains(["internet-facing", "internal"], var.alb_scheme)
+    error_message = "alb_scheme must be either \"internet-facing\" or \"internal\"."
+  }
+}
+
 variable "namespace" {
   description = "Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials."
   type        = string

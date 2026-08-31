@@ -16,6 +16,7 @@ aws:
 
 awsTurnkey:
   enabled: true
+  scheme: "${alb_scheme}"
   certificateArn: "${certificate_arn}"
   dbPasswordSecretName: "${db_password_secret_name}"
   deviceJwtSigningKeySecretName: "${device_jwt_signing_key_secret_name}"

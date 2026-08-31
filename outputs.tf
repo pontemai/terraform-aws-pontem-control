@@ -3,6 +3,7 @@ module "chart_values" {
   source = "./modules/chart_values"
 
   app_domain_name     = var.app_domain_name
+  alb_scheme          = var.alb_scheme
   aws_region          = local.region
   acm_certificate_arn = local.acm_certificate_arn
   cluster_name        = aws_eks_cluster.this.name

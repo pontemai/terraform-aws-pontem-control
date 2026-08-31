@@ -160,6 +160,16 @@ run "rejects_empty_route53_zone_id" {
   expect_failures = [var.route53_zone_id]
 }
 
+run "rejects_unsupported_alb_scheme" {
+  command = plan
+
+  variables {
+    alb_scheme = "public"
+  }
+
+  expect_failures = [var.alb_scheme]
+}
+
 run "rejects_unsupported_secret_recovery_window" {
   command = plan
 

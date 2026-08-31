@@ -382,6 +382,35 @@ run "default_configuration" {
   }
 }
 
+run "internal_alb_scheme_flows_to_chart_values" {
+  command = plan
+
+  variables {
+    alb_scheme = "internal"
+  }
+
+  override_resource {
+    target          = aws_acm_certificate.app
+    override_during = plan
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/example"
+    }
+  }
+
+  override_resource {
+    target          = aws_db_instance.this
+    override_during = plan
+    values = {
+      address = "db.example.com"
+    }
+  }
+
+  assert {
+    condition     = yamldecode(output.helm_values).awsTurnkey.scheme == "internal"
+    error_message = "alb_scheme must reach awsTurnkey.scheme in the rendered chart values."
+  }
+}
+
 run "vpc_flow_logs_can_be_disabled" {
   command = plan
 
