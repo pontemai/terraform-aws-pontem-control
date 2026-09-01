@@ -15,6 +15,11 @@ resource "aws_acm_certificate" "app" {
   # Keep the old certificate until its replacement is ready for the ALB.
   lifecycle {
     create_before_destroy = true
+
+    precondition {
+      condition     = var.route53_zone_id == null || !var.create_route53_zone
+      error_message = "Set only one of route53_zone_id or create_route53_zone."
+    }
   }
 
   tags = local.tags

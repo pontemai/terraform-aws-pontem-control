@@ -1,6 +1,7 @@
 # Exactly two secrets in Secrets Manager: the database password and the device
-# JWT signing key. Their values are ephemeral and flow only through write-only
-# provider arguments, so Terraform never stores them in plans or state.
+# JWT signing key. These random resources are converter-compatible, but their
+# values are stored in Terraform state. The write-only AWS arguments below keep
+# the values out of the AWS resource state.
 #
 # Per-tenant secrets are not created here; the application creates those at runtime
 # under the tenant-* prefixes that identity.tf grants.
@@ -16,13 +17,21 @@
 # `terraform destroy` fail outright, which is hostile when someone is tearing
 # down an evaluation. The Secrets Manager recovery window
 # (secret_recovery_window_days) is the real protection.
-ephemeral "random_password" "db" {
+resource "random_password" "db" {
   length  = 32
   special = false
+
+  keepers = {
+    version = var.db_password_version
+  }
 }
 
-ephemeral "random_bytes" "device_jwt_signing_key" {
+resource "random_bytes" "device_jwt_signing_key" {
   length = 32
+
+  keepers = {
+    version = var.device_jwt_signing_key_version
+  }
 }
 
 resource "aws_secretsmanager_secret" "db_password" {
@@ -35,7 +44,7 @@ resource "aws_secretsmanager_secret" "db_password" {
 
 resource "aws_secretsmanager_secret_version" "db_password" {
   secret_id                = aws_secretsmanager_secret.db_password.id
-  secret_string_wo         = ephemeral.random_password.db.result
+  secret_string_wo         = random_password.db.result
   secret_string_wo_version = var.db_password_version
 }
 
@@ -49,6 +58,6 @@ resource "aws_secretsmanager_secret" "device_jwt_signing_key" {
 
 resource "aws_secretsmanager_secret_version" "device_jwt_signing_key" {
   secret_id                = aws_secretsmanager_secret.device_jwt_signing_key.id
-  secret_string_wo         = ephemeral.random_bytes.device_jwt_signing_key.base64
+  secret_string_wo         = random_bytes.device_jwt_signing_key.base64
   secret_string_wo_version = var.device_jwt_signing_key_version
 }
