@@ -344,6 +344,19 @@ variable "wif_audience" {
   default     = "REPLACE_ME_PONTEM_SUPPLIED"
 }
 
+variable "distribution" {
+  description = "Per-tenant agent distribution sources rendered into the chart values. Registry rows and credentials must already exist in the control plane."
+  type = object({
+    tenants = map(object({
+      agent = optional(object({
+        registryId    = string
+        allowFallback = optional(bool)
+      }))
+    }))
+  })
+  default = null
+}
+
 variable "oidc_client_id" {
   description = "Client ID of the public single-page-app client the admin UI signs in with. Used only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy."
   type        = string
