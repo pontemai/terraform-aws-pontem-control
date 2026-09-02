@@ -97,7 +97,7 @@ variable "distribution" {
   default = null
 
   validation {
-    condition     = var.distribution == null || alltrue([for config in values(var.distribution.tenants) : config.agent == null ? true : try(length(config.agent.registryId) > 0, false)])
+    condition     = alltrue([for config in values(try(var.distribution.tenants, {})) : config.agent == null ? true : try(length(config.agent.registryId) > 0, false)])
     error_message = "Every configured distribution agent registryId must be non-empty."
   }
 }
