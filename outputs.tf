@@ -18,6 +18,7 @@ module "chart_values" {
   db_name = aws_db_instance.this.db_name
   db_user = aws_db_instance.this.username
 
+  distribution   = var.distribution
   oidc_issuer    = var.oidc_issuer
   oidc_audience  = var.oidc_audience
   oidc_client_id = var.oidc_client_id

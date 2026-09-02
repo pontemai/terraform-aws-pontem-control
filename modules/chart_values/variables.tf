@@ -83,3 +83,21 @@ variable "wif_audience" {
   description = "GCP Workload Identity Federation audience, rendered as gcp.wifAudience."
   type        = string
 }
+
+variable "distribution" {
+  description = "Per-tenant agent distribution sources; omitted from chart values when unset. Registry rows must already exist in the control plane."
+  type = object({
+    tenants = map(object({
+      agent = optional(object({
+        registryId    = string
+        allowFallback = optional(bool)
+      }))
+    }))
+  })
+  default = null
+
+  validation {
+    condition     = var.distribution == null || alltrue([for config in values(var.distribution.tenants) : config.agent == null ? true : try(length(config.agent.registryId) > 0, false)])
+    error_message = "Every configured distribution agent registryId must be non-empty."
+  }
+}

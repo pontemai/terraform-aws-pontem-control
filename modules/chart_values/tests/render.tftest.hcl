@@ -211,6 +211,11 @@ run "values_satisfy_the_chart_contract" {
     error_message = "An un-substituted wifAudience must render as the loud placeholder, not as an empty string."
   }
 
+  assert {
+    condition     = !contains(keys(yamldecode(output.helm_values)), "distribution")
+    error_message = "distribution must be omitted when unset so existing rendered values stay unchanged."
+  }
+
   # No key the chart's schema does not define: it sets additionalProperties
   # false at every level, so one stray top-level key fails the whole install.
   assert {
@@ -223,6 +228,73 @@ run "values_satisfy_the_chart_contract" {
     ])) == 0
     error_message = "helm_values contains a top-level key the chart's values.schema.json does not define; the schema sets additionalProperties=false, so the install would be rejected."
   }
+}
+
+run "distribution_is_rendered" {
+  command = plan
+
+  variables {
+    distribution = {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = "acme-agent-mirror"
+          }
+        }
+        acme-data = {}
+      }
+    }
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values).distribution == {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = "acme-agent-mirror"
+          }
+        }
+        acme-data = {}
+      }
+    }, false)
+    error_message = "distribution must render the configured per-tenant agent source."
+  }
+}
+
+run "distribution_rejects_empty_registry_id" {
+  command = plan
+
+  variables {
+    distribution = {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = ""
+          }
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.distribution]
+}
+
+run "distribution_rejects_null_registry_id" {
+  command = plan
+
+  variables {
+    distribution = {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = null
+          }
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.distribution]
 }
 
 run "route53_disabled_omits_external_dns_configuration" {
