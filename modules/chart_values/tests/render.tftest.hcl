@@ -26,7 +26,7 @@ variables {
   oidc_issuer    = "https://example.us.auth0.com/"
   oidc_audience  = "https://api.example.com"
   oidc_client_id = "ExampleSpaClientId"
-  wif_audience   = "REPLACE_ME_PONTEM_SUPPLIED"
+  wif_audience   = ""
 }
 
 run "values_satisfy_the_chart_contract" {
@@ -203,12 +203,9 @@ run "values_satisfy_the_chart_contract" {
     error_message = "admin.authMode must use provider-neutral OIDC; `auth0` is a deprecated compatibility mode."
   }
 
-  # The chart rejects an empty wifAudience but accepts any non-empty string, so
-  # the un-substituted value has to be a visible sentinel: it is the only thing
-  # that makes a forgotten substitution obvious in a diff or a rendered file.
   assert {
-    condition     = yamldecode(output.helm_values).gcp.wifAudience == "REPLACE_ME_PONTEM_SUPPLIED"
-    error_message = "An un-substituted wifAudience must render as the loud placeholder, not as an empty string."
+    condition     = yamldecode(output.helm_values).gcp.wifAudience == ""
+    error_message = "wifAudience must stay empty when no GCP-backed feature is enabled."
   }
 
   assert {

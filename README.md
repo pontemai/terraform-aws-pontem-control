@@ -51,8 +51,8 @@ application hostname.
   on the API and the **Refresh Token** grant on the SPA application.
 - From Pontem: read access to this module, a released module version, access to
   the distribution ECR registry, and a released chart version.
-- To enable managed packages: after the first Terraform apply, Pontem supplies
-  `wif_audience` and the managed package Helm values.
+- Managed packages are optional. To enable them, Pontem supplies `wif_audience`
+  and a managed package Helm values file after the first Terraform apply.
 
 Confirm which AWS identity is active before you configure the module:
 
@@ -154,6 +154,8 @@ aws acm describe-certificate \
 
 ### 2. Optional: Enable managed package access
 
+Skip this step if you do not use Pontem-managed packages.
+
 Send these values to Pontem:
 
 ```bash
@@ -161,16 +163,22 @@ terraform output -raw aws_account_id
 terraform output -raw cp_runtime_assumed_role_arn
 ```
 
-Set the returned audience as `wif_audience` in the root module. Save the
-managed package Helm values from Pontem as `managed-sync-values.yaml`, then
-update the rendered Helm values:
+Pontem will return a WIF audience and `managed-sync-values.yaml`. Add the
+audience to the module configuration:
+
+```hcl
+module "pontem_control" {
+  # ...
+
+  wif_audience = "//iam.googleapis.com/projects/..."
+}
+```
+
+Apply the change:
 
 ```bash
 terraform apply
 ```
-
-The default `REPLACE_ME_PONTEM_SUPPLIED` value allows installation, but managed
-package pulls fail until it is replaced.
 
 ### 3. Connect kubectl to the cluster
 
@@ -502,7 +510,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | single\_nat\_gateway | Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
 | tags | Extra tags merged onto every resource this module creates, on top of its own Project/ManagedBy tags. | `map(string)` | `{}` | no |
 | vpc\_cidr | CIDR block for the dedicated VPC. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database. | `string` | `"10.0.0.0/16"` | no |
-| wif\_audience | GCP Workload Identity Federation audience, which Pontem issues once it has your account id and the control-plane runtime role ARN (both are outputs of this module). Until you set it, the rendered chart values carry the placeholder below; the chart rejects only an EMPTY audience, so an install that keeps the placeholder succeeds and then fails the first time a managed agent package is pulled. | `string` | `"REPLACE_ME_PONTEM_SUPPLIED"` | no |
+| wif\_audience | GCP Workload Identity Federation audience for GCP-backed features. Pontem issues it after receiving this module's aws\_account\_id and cp\_runtime\_assumed\_role\_arn outputs. Leave empty when no GCP-backed features are enabled. | `string` | `""` | no |
 
 ## Outputs
 
@@ -514,7 +522,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | aws\_account\_id | Account these resources were created in. Pontem pins the federation to this account as well as to the role below, so send both. |
 | aws\_region | Region these resources were created in, read from the provider. Needed by the External Secrets Operator store, which names its region explicitly. |
 | cluster\_name | EKS cluster name, which aws eks commands take and which equals name\_prefix. |
-| cp\_runtime\_assumed\_role\_arn | Send this to Pontem with aws\_account\_id to get your wif\_audience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition matches; the arn:aws:iam::...:role/... form of the same role does not match, and the federation denies without saying why. |
+| cp\_runtime\_assumed\_role\_arn | When enabling a GCP-backed feature, send this to Pontem with aws\_account\_id to get your wif\_audience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition matches; the arn:aws:iam::...:role/... form of the same role does not match, and the federation denies without saying why. |
 | db\_endpoint | RDS endpoint hostname, without the port. |
 | db\_password\_secret\_name | Secrets Manager name of the database password rendered into helm\_values. |
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device-JWT signing key rendered into helm\_values. |

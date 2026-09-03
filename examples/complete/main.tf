@@ -34,8 +34,7 @@ module "pontem_control" {
 
   # ----- Optional -----
 
-  # Set this after Pontem sends it, then re-apply and regenerate values.yaml.
-  # The placeholder lets Helm install, but managed package pulls fail.
+  # Required only for GCP-backed features such as Pontem-managed packages.
   # wif_audience = "//iam.googleapis.com/projects/…/providers/aws-eks"
 
   # Use an existing hosted zone for certificate validation and application DNS.

@@ -339,9 +339,9 @@ variable "oidc_audience" {
 }
 
 variable "wif_audience" {
-  description = "GCP Workload Identity Federation audience, which Pontem issues once it has your account id and the control-plane runtime role ARN (both are outputs of this module). Until you set it, the rendered chart values carry the placeholder below; the chart rejects only an EMPTY audience, so an install that keeps the placeholder succeeds and then fails the first time a managed agent package is pulled."
+  description = "GCP Workload Identity Federation audience for GCP-backed features. Pontem issues it after receiving this module's aws_account_id and cp_runtime_assumed_role_arn outputs. Leave empty when no GCP-backed features are enabled."
   type        = string
-  default     = "REPLACE_ME_PONTEM_SUPPLIED"
+  default     = ""
 }
 
 variable "distribution" {
