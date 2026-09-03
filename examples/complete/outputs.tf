@@ -35,7 +35,7 @@ output "app_url" {
   value       = module.pontem_control.app_url
 }
 
-# The two values to send Pontem to get your gcp.wifAudience.
+# Send these values to Pontem when enabling a GCP-backed feature.
 output "aws_account_id" {
   description = "Account these resources live in."
   value       = module.pontem_control.aws_account_id

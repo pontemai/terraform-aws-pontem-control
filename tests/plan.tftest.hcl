@@ -348,6 +348,11 @@ run "default_configuration" {
     error_message = "The certificate must cover exactly app_domain_name; a mismatch with the chart's ingress.domain serves the wrong name and browsers reject it."
   }
 
+  assert {
+    condition     = var.wif_audience == ""
+    error_message = "gcp.wifAudience must default to empty because AWS deployments do not need GCP federation unless a GCP-backed feature is enabled."
+  }
+
   # ----- Log retention -----
 
   assert {

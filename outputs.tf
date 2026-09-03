@@ -81,7 +81,7 @@ output "aws_region" {
 }
 
 output "cp_runtime_assumed_role_arn" {
-  description = "Send this to Pontem with aws_account_id to get your wif_audience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition matches; the arn:aws:iam::...:role/... form of the same role does not match, and the federation denies without saying why."
+  description = "When enabling a GCP-backed feature, send this to Pontem with aws_account_id to get your wif_audience. It is the session-stripped assumed-role form (arn:aws:sts::<account>:assumed-role/<role>), which is what GCP Workload Identity Federation exposes as the role attribute and what its trust condition matches; the arn:aws:iam::...:role/... form of the same role does not match, and the federation denies without saying why."
   value       = "arn:aws:sts::${local.account_id}:assumed-role/${aws_iam_role.cp_runtime.name}"
 }
 
