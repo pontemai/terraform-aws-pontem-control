@@ -50,8 +50,9 @@ application hostname.
   refresh tokens for `offline_access`. In Auth0, enable **Allow Offline Access**
   on the API and the **Refresh Token** grant on the SPA application.
 - From Pontem: read access to this module, a released module version, access to
-  the distribution ECR registry, and a released chart version. Pontem supplies
-  `wif_audience` after the first Terraform apply.
+  the distribution ECR registry, and a released chart version.
+- To enable managed packages: after the first Terraform apply, Pontem supplies
+  `wif_audience` and the managed package Helm values.
 
 Confirm which AWS identity is active before you configure the module:
 
@@ -151,7 +152,7 @@ aws acm describe-certificate \
   --query 'Certificate.Status'
 ```
 
-### 2. Register the AWS role with Pontem
+### 2. Optional: Enable managed package access
 
 Send these values to Pontem:
 
@@ -160,8 +161,9 @@ terraform output -raw aws_account_id
 terraform output -raw cp_runtime_assumed_role_arn
 ```
 
-Set the returned audience as `wif_audience` in the root module, then update the
-rendered Helm values:
+Set the returned audience as `wif_audience` in the root module. Save the
+managed package Helm values from Pontem as `managed-sync-values.yaml`, then
+update the rendered Helm values:
 
 ```bash
 terraform apply
@@ -182,6 +184,9 @@ listed in `cluster_admin_principal_arns`.
 
 ### 4. Install the Helm chart
 
+The second `--values` file is needed only when managed packages are enabled.
+Omit that line if you skipped step 2.
+
 ```bash
 terraform output -raw helm_values > values.yaml
 
@@ -195,6 +200,7 @@ helm upgrade --install pontem-control \
   --namespace "$(terraform output -raw namespace)" \
   --create-namespace \
   --values values.yaml \
+  --values managed-sync-values.yaml \
   --wait --timeout 10m
 ```
 
@@ -249,6 +255,12 @@ Open `https://<your-hostname>/admin/` in a browser and sign in with an email
 passed to `--extra-admin`. The organization should appear after sign-in. This
 checks the admin container and OIDC configuration, which the API health endpoint
 does not.
+
+### 7. Optional: Select managed packages
+
+Open **Settings** in the admin app. Under **Package policy**, select **stable**.
+Leave **Restrict to specific packages** off to sync every stable package, or
+turn it on and list the packages to admit. Select **Save**, then **Sync now**.
 
 To connect the first device, open the in-product docs and follow **Tutorial:
 Onboard a Device**.
