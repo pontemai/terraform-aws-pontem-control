@@ -72,7 +72,7 @@ resource "aws_db_instance" "this" {
 
   db_name             = var.db_name
   username            = var.db_user
-  password_wo         = ephemeral.random_password.db.result
+  password_wo         = random_password.db.result
   password_wo_version = var.db_password_version
   port                = 5432
 
@@ -107,6 +107,13 @@ resource "aws_db_instance" "this" {
   final_snapshot_identifier = "${var.name_prefix}-final"
 
   tags = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = var.db_max_allocated_storage >= var.db_allocated_storage
+      error_message = "db_max_allocated_storage must be greater than or equal to db_allocated_storage."
+    }
+  }
 
   depends_on = [aws_cloudwatch_log_group.rds]
 }

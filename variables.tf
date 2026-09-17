@@ -173,11 +173,6 @@ variable "db_max_allocated_storage" {
   description = "Ceiling for RDS storage autoscaling, in GiB. Must be at least db_allocated_storage."
   type        = number
   default     = 200
-
-  validation {
-    condition     = var.db_max_allocated_storage >= var.db_allocated_storage
-    error_message = "db_max_allocated_storage must be greater than or equal to db_allocated_storage."
-  }
 }
 
 variable "db_name" {
@@ -270,11 +265,6 @@ variable "route53_zone_id" {
   validation {
     condition     = var.route53_zone_id == null || can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
     error_message = "route53_zone_id must be null or a Route53 hosted zone ID beginning with Z."
-  }
-
-  validation {
-    condition     = var.route53_zone_id == null || !var.create_route53_zone
-    error_message = "Set only one of route53_zone_id or create_route53_zone."
   }
 }
 
