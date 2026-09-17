@@ -1,8 +1,12 @@
 # VPC Flow Logs record network metadata, not packet contents, in CloudWatch with
 # the module's retention setting.
 
+locals {
+  create_vpc_flow_logs = local.create_vpc && var.enable_vpc_flow_logs
+}
+
 resource "aws_cloudwatch_log_group" "vpc_flow" {
-  count = var.enable_vpc_flow_logs ? 1 : 0
+  count = local.create_vpc_flow_logs ? 1 : 0
 
   name              = "/aws/vpc/${var.name_prefix}/flow-logs"
   retention_in_days = var.cloudwatch_log_retention_days
@@ -11,7 +15,7 @@ resource "aws_cloudwatch_log_group" "vpc_flow" {
 }
 
 resource "aws_iam_role" "vpc_flow" {
-  count = var.enable_vpc_flow_logs ? 1 : 0
+  count = local.create_vpc_flow_logs ? 1 : 0
 
   name        = "${var.name_prefix}-vpc-flow-logs"
   description = "Lets VPC Flow Logs publish network metadata to this module's CloudWatch log group."
@@ -38,7 +42,7 @@ resource "aws_iam_role" "vpc_flow" {
 }
 
 resource "aws_iam_role_policy" "vpc_flow" {
-  count = var.enable_vpc_flow_logs ? 1 : 0
+  count = local.create_vpc_flow_logs ? 1 : 0
 
   name = "${var.name_prefix}-vpc-flow-logs"
   role = aws_iam_role.vpc_flow[0].id
@@ -64,12 +68,12 @@ resource "aws_iam_role_policy" "vpc_flow" {
 }
 
 resource "aws_flow_log" "vpc" {
-  count = var.enable_vpc_flow_logs ? 1 : 0
+  count = local.create_vpc_flow_logs ? 1 : 0
 
   iam_role_arn    = aws_iam_role.vpc_flow[0].arn
   log_destination = aws_cloudwatch_log_group.vpc_flow[0].arn
   traffic_type    = "ALL"
-  vpc_id          = aws_vpc.this.id
+  vpc_id          = local.vpc_id
 
   tags = local.tags
 

@@ -56,6 +56,7 @@ run "values_satisfy_the_chart_contract" {
   assert {
     condition = try(yamldecode(output.helm_values).awsTurnkey == {
       enabled                       = true
+      scheme                        = "internet-facing"
       certificateArn                = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
       dbPasswordSecretName          = "pontem-control-db-password"
       deviceJwtSigningKeySecretName = "pontem-control-device-jwt-signing-key"
@@ -99,11 +100,9 @@ run "values_satisfy_the_chart_contract" {
     error_message = "secretsBackend.type must be aws so tenant secrets go to Secrets Manager."
   }
 
-  # The chart's schema has no s3 blob backend, so "none" is the only honest
-  # answer here, not a placeholder to be filled in later.
   assert {
-    condition     = yamldecode(output.helm_values).blobStorage.type == "none"
-    error_message = "blobStorage.type must be none; the chart's enum is gcs|none and there is no AWS object-storage backend."
+    condition     = !contains(keys(yamldecode(output.helm_values)), "blobStorage")
+    error_message = "blobStorage must be omitted because the chart schema rejects it."
   }
 
   # The application rejects a DSN with an embedded password and reads
@@ -218,7 +217,7 @@ run "values_satisfy_the_chart_contract" {
   assert {
     condition = length(setsubtract(keys(yamldecode(output.helm_values)), [
       "image", "version", "credentials", "cloudProvider", "aws", "gcp", "auth",
-      "externalDatabase", "blobStorage", "agentCatalog", "secretsBackend",
+      "externalDatabase", "agentCatalog", "secretsBackend",
       "observability", "tracing", "managedSync", "devicePurge", "serviceAccount",
       "api", "worker", "mcp", "admin", "ingress", "awsTurnkey",
       "external-secrets", "externalDns",
@@ -341,5 +340,39 @@ run "wif_audience_is_substitutable" {
   assert {
     condition     = yamldecode(output.helm_values).gcp.wifAudience == "//iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/aws-customer/providers/aws-eks"
     error_message = "wif_audience must render verbatim — the chart matches it against what GCP issued."
+  }
+}
+
+run "explicit_alb_subnets" {
+  command = plan
+
+  variables {
+    alb_subnet_ids = ["subnet-00000000000000003", "subnet-00000000000000004"]
+  }
+
+  assert {
+    condition = try(
+      yamldecode(output.helm_values).awsTurnkey.scheme == "internet-facing" &&
+      yamldecode(output.helm_values).awsTurnkey.subnetIds == ["subnet-00000000000000003", "subnet-00000000000000004"],
+      false,
+    )
+    error_message = "Explicit ALB subnet IDs and the scheme must reach the chart unchanged."
+  }
+}
+
+run "internal_alb" {
+  command = plan
+
+  variables {
+    alb_scheme = "internal"
+  }
+
+  assert {
+    condition = try(
+      yamldecode(output.helm_values).awsTurnkey.scheme == "internal" &&
+      !contains(keys(yamldecode(output.helm_values).awsTurnkey), "subnetIds"),
+      false,
+    )
+    error_message = "Internal ALBs must use the requested scheme and retain discovery when no subnets are supplied."
   }
 }

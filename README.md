@@ -9,11 +9,12 @@ install below.
 
 ## What it creates
 
-- A dedicated VPC with public and private subnets in two availability zones.
+- By default, a dedicated VPC with public and private subnets in two availability
+  zones. You can also supply an existing VPC and subnets.
 - An EKS Auto Mode cluster.
 - A private, Multi-AZ RDS Postgres instance.
 - Secrets Manager secrets for the database password and device JWT signing key.
-- CloudWatch log groups for EKS, RDS, and VPC Flow Logs.
+- CloudWatch log groups for EKS and RDS, plus VPC Flow Logs for a managed VPC.
 - An ACM certificate for `app_domain_name` and, when requested, a Route53 hosted
   zone.
 - EKS Pod Identity roles for the control-plane pods and External Secrets
@@ -110,6 +111,62 @@ Terraform plans and state do not contain the generated database password or
 device JWT signing key. Raising either secret-version input rotates that secret;
 database rotation needs a pod rollout, and signing-key rotation invalidates
 active device JWTs.
+
+### Use an existing VPC
+
+Add these inputs to the module block above:
+
+```hcl
+  vpc_id             = "vpc-0123456789abcdef0"
+  private_subnet_ids = ["subnet-00000000000000001", "subnet-00000000000000002"]
+  public_subnet_ids  = ["subnet-00000000000000003", "subnet-00000000000000004"]
+```
+
+EKS and RDS use the private subnets. The internet-facing ALB uses the public
+subnets. For a private ALB, set `alb_scheme = "internal"` and omit
+`public_subnet_ids`; the ALB then uses `private_subnet_ids`. Browsers and devices
+need private connectivity to reach an internal ALB.
+
+All supplied subnets must belong to `vpc_id` in the provider's region. Private
+subnets must span at least two standard availability zones. ALB subnets must
+include exactly one subnet per AZ, in at least two AZs. IDs must be distinct and
+private/public lists must not overlap. The VPC must enable DNS support and DNS
+hostnames. Terraform checks these conditions using read-only AWS lookups. The
+VPC ID and subnet list lengths must be known at plan time; individual subnet IDs
+can resolve during apply.
+
+You retain ownership of the VPC, subnets, routes, NAT and internet gateways,
+default security group, tags, and VPC Flow Logs. This module does not change
+those resources. `vpc_cidr`, `availability_zone_count`, `single_nat_gateway`, and
+`enable_vpc_flow_logs` configure only a managed VPC and are ignored here.
+The module still creates its RDS security group, and EKS Auto Mode manages
+cluster/node security groups. Existing-VPC mode does not accept custom workload
+security groups.
+
+Your network must provide:
+
+- Private-subnet connectivity for EKS nodes and pods to AWS APIs, image
+  registries, and configured external services, including your OIDC provider
+  and any enabled managed-package services. Supply NAT or the required private
+  connectivity; this module adds no VPC endpoints or egress allowlist.
+- An internet-gateway route from public subnets for an internet-facing ALB.
+- Routing and network ACLs that allow cluster traffic, ALB-to-pod traffic, and
+  pod-to-RDS traffic. Subnets need capacity for control-plane ENIs, nodes, pods,
+  and load balancers.
+- The [EKS Auto Mode subnet tags](https://docs.aws.amazon.com/eks/latest/userguide/tag-subnets-auto.html):
+  `kubernetes.io/role/elb = "1"` on public subnets and
+  `kubernetes.io/role/internal-elb = "1"` on private subnets. You manage these
+  tags; supplying subnet IDs does not add them.
+
+**Chart compatibility:** existing-VPC mode requires a chart release supporting
+`awsTurnkey.subnetIds`. Use a chart version that includes this value; older
+charts cannot provide the explicit subnet placement required by this mode.
+
+**Existing deployments:** changing a deployment's VPC or switching between
+managed and supplied networking is not an in-place migration. Terraform can
+plan to destroy the managed network and replace the cluster or database. This
+feature is for new deployments in an existing VPC. Upgrading the module while
+keeping the default managed-VPC configuration preserves its network resources.
 
 ## Deploy
 
@@ -406,7 +463,7 @@ Contributing requires Terraform 1.11.4 or newer.
 
 | Name | Version |
 | ---- | ------- |
-| aws | 6.62.0 |
+| aws | 6.65.0 |
 
 ## Resources
 
@@ -465,6 +522,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | [aws_subnet.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet) | resource |
 | [aws_vpc.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc) | resource |
 | [aws_availability_zones.available](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
+| [aws_availability_zones.existing](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.cluster_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -472,6 +530,9 @@ Contributing requires Terraform 1.11.4 or newer.
 | [aws_iam_policy_document.device_telemetry_writer_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.node_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
+| [aws_subnet.private](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet) | data source |
+| [aws_subnet.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet) | data source |
+| [aws_vpc.existing](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/vpc) | data source |
 
 ## Inputs
 
@@ -483,7 +544,8 @@ Contributing requires Terraform 1.11.4 or newer.
 | oidc\_audience | OIDC API audience the control plane validates access tokens against, and that the admin app requests tokens for. These must be the same value or the API rejects every token the UI sends. | `string` | n/a | yes |
 | oidc\_client\_id | Client ID of the public single-page-app client the admin UI signs in with. Used only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy. | `string` | n/a | yes |
 | oidc\_issuer | OIDC issuer URL, e.g. "https://your-tenant.us.auth0.com/" or "https://your-org.okta.com/oauth2/default". | `string` | n/a | yes |
-| availability\_zone\_count | How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them. | `number` | `2` | no |
+| alb\_scheme | ALB scheme: internet-facing uses public subnets; internal uses private subnets and requires private client connectivity. | `string` | `"internet-facing"` | no |
+| availability\_zone\_count | How many availability zones to spread managed subnets across; ignored when vpc\_id is set. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them. | `number` | `2` | no |
 | aws\_organization\_id | Optional AWS Organizations ID (for example, o-abc123def456). When set, Pod Identity roles also require their source to belong to this organization. | `string` | `null` | no |
 | cloudwatch\_log\_retention\_days | Retention for the module's device, EKS, RDS, and VPC Flow Log groups. 0 keeps them forever. | `number` | `90` | no |
 | cluster\_deletion\_protection | Refuse to delete the EKS cluster. While true, `terraform destroy` fails until it is set false and applied. | `bool` | `true` | no |
@@ -500,16 +562,19 @@ Contributing requires Terraform 1.11.4 or newer.
 | db\_user | Postgres user the application authenticates as. This is the instance's master user, so it is created with the instance; CHANGING IT REPLACES THE DATABASE. | `string` | `"app"` | no |
 | device\_jwt\_signing\_key\_version | Version of the generated device JWT signing key. Raising this value invalidates every enrolled device's JWT. | `number` | `1` | no |
 | distribution | Per-tenant agent distribution sources rendered into the chart values. Registry rows and credentials must already exist in the control plane. | <pre>object({<br/>    tenants = map(object({<br/>      agent = optional(object({<br/>        registryId    = string<br/>        allowFallback = optional(bool)<br/>      }))<br/>    }))<br/>  })</pre> | `null` | no |
-| enable\_vpc\_flow\_logs | Capture all VPC traffic metadata in CloudWatch. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
+| enable\_vpc\_flow\_logs | Capture managed-VPC traffic metadata in CloudWatch. Ignored when vpc\_id is set; existing VPC logging stays customer-managed. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
 | pod\_identity\_service\_accounts | Service accounts in `namespace` bound to the control-plane runtime role. The chart's api and worker pods both need AWS credentials for tenant-secret storage. Add "mcp" only if you enable the mcp deployment (it is off unless you set mcp.host in the chart). | `list(string)` | <pre>[<br/>  "api",<br/>  "worker"<br/>]</pre> | no |
+| private\_subnet\_ids | Existing private subnets for EKS and RDS, spanning at least two standard AZs in vpc\_id. Internal ALBs also use this list, requiring one subnet per AZ. Empty when creating a VPC. | `list(string)` | `[]` | no |
+| public\_subnet\_ids | Existing ALB public subnets: one per AZ, in at least two standard AZs in vpc\_id. Required for an internet-facing ALB with vpc\_id; otherwise must be empty. | `list(string)` | `[]` | no |
 | route53\_zone\_id | ID of an existing Route53 hosted zone for app\_domain\_name. Set this or create\_route53\_zone to automate ACM validation and application DNS. Leave both unset to create the returned acm\_validation\_records yourself. | `string` | `null` | no |
 | secret\_recovery\_window\_days | Days a deleted secret stays recoverable. AWS keeps the deleted secret's NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with "already scheduled for deletion" until the window expires. 0 deletes immediately, which makes repeated build-and-tear-down cycles work. | `number` | `30` | no |
-| single\_nat\_gateway | Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
+| single\_nat\_gateway | Managed-VPC setting, ignored when vpc\_id is set. Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
 | tags | Extra tags merged onto every resource this module creates, on top of its own Project/ManagedBy tags. | `map(string)` | `{}` | no |
-| vpc\_cidr | CIDR block for the dedicated VPC. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database. | `string` | `"10.0.0.0/16"` | no |
+| vpc\_cidr | CIDR block for the dedicated VPC; ignored when vpc\_id is set. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database. | `string` | `"10.0.0.0/16"` | no |
+| vpc\_id | Existing VPC to use without managing its networking. Null creates a dedicated VPC. Changing an existing deployment's VPC is not an in-place migration. | `string` | `null` | no |
 | wif\_audience | GCP Workload Identity Federation audience for GCP-backed features. Pontem issues it after receiving this module's aws\_account\_id and cp\_runtime\_assumed\_role\_arn outputs. Leave empty when no GCP-backed features are enabled. | `string` | `""` | no |
 
 ## Outputs
@@ -531,5 +596,5 @@ Contributing requires Terraform 1.11.4 or newer.
 | private\_subnet\_ids | Private subnet IDs. Nodes run here and the RDS subnet group spans them. |
 | route53\_name\_servers | Name servers for the hosted zone created when create\_route53\_zone is true. Delegate app\_domain\_name to these servers before the full apply; see the README. |
 | update\_kubeconfig\_command | Command that points kubectl at this cluster. Only principals listed in cluster\_admin\_principal\_arns can use the resulting context. |
-| vpc\_id | ID of the dedicated VPC. The join point for anything else you run in the same network. |
+| vpc\_id | ID of the managed or supplied VPC. The join point for anything else you run in the same network. |
 <!-- END_TF_DOCS -->

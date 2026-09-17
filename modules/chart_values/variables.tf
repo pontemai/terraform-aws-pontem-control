@@ -101,3 +101,22 @@ variable "distribution" {
     error_message = "Every configured distribution agent registryId must be non-empty."
   }
 }
+
+variable "alb_scheme" {
+  description = "ALB scheme rendered as awsTurnkey.scheme."
+  type        = string
+  default     = "internet-facing"
+  nullable    = false
+
+  validation {
+    condition     = contains(["internet-facing", "internal"], var.alb_scheme)
+    error_message = "alb_scheme must be internet-facing or internal."
+  }
+}
+
+variable "alb_subnet_ids" {
+  description = "Explicit ALB subnet IDs rendered as awsTurnkey.subnetIds; empty preserves subnet discovery."
+  type        = list(string)
+  default     = []
+  nullable    = false
+}

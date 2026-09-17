@@ -29,11 +29,13 @@ lint:
 
 test:
 	terraform -chdir=. init -backend=false -input=false -upgrade >/dev/null
-	@test_output="$$(terraform -chdir=. test -json -verbose)" || { \
-		printf '%s\n' "$$test_output"; \
+	@test_output="$$(mktemp)"; \
+	trap 'rm -f "$$test_output"' EXIT; \
+	terraform -chdir=. test -json -verbose >"$$test_output" || { \
+		cat "$$test_output"; \
 		exit 1; \
 	}; \
-	if printf '%s\n' "$$test_output" | grep -Eq '"address":"aws_eks_access_(entry|policy_association)\.auto_node(\[|")'; then \
+	if grep -Eq '"address":"aws_eks_access_(entry|policy_association)\.auto_node(\[|")' "$$test_output"; then \
 		echo "Terraform must not manage EKS Auto Mode node access." >&2; \
 		exit 1; \
 	fi

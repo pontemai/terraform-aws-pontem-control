@@ -5,6 +5,8 @@ output "helm_values" {
     aws_region      = var.aws_region
     certificate_arn = var.acm_certificate_arn
     cluster_name    = var.cluster_name
+    alb_scheme      = var.alb_scheme
+    alb_subnet_ids  = var.alb_subnet_ids
     route53_zone_id = var.route53_zone_id
 
     db_password_secret_name            = var.db_password_secret_name
