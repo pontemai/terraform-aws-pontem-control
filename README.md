@@ -114,7 +114,7 @@ active device JWTs.
 
 ### Use an existing VPC
 
-Add these inputs to the module block above:
+To create a stack in an existing VPC, add these inputs to the module block above:
 
 ```hcl
   vpc_id             = "vpc-0123456789abcdef0"
@@ -131,9 +131,8 @@ All supplied subnets must belong to `vpc_id` in the provider's region. Private
 subnets must span at least two standard availability zones. ALB subnets must
 include exactly one subnet per AZ, in at least two AZs. IDs must be distinct and
 private/public lists must not overlap. The VPC must enable DNS support and DNS
-hostnames. Terraform checks these conditions using read-only AWS lookups. The
-VPC ID and subnet list lengths must be known at plan time; individual subnet IDs
-can resolve during apply.
+hostnames. The VPC ID and subnet list lengths must be known at plan time;
+individual subnet IDs can resolve during apply.
 
 You retain ownership of the VPC, subnets, routes, NAT and internet gateways,
 default security group, tags, and VPC Flow Logs. This module does not change
@@ -158,15 +157,7 @@ Your network must provide:
   `kubernetes.io/role/internal-elb = "1"` on private subnets. You manage these
   tags; supplying subnet IDs does not add them.
 
-**Chart compatibility:** existing-VPC mode requires a chart release supporting
-`awsTurnkey.subnetIds`. Use a chart version that includes this value; older
-charts cannot provide the explicit subnet placement required by this mode.
-
-**Existing deployments:** changing a deployment's VPC or switching between
-managed and supplied networking is not an in-place migration. Terraform can
-plan to destroy the managed network and replace the cluster or database. This
-feature is for new deployments in an existing VPC. Upgrading the module while
-keeping the default managed-VPC configuration preserves its network resources.
+Existing-VPC deployments require a chart version supporting `awsTurnkey.subnetIds`.
 
 ## Deploy
 
@@ -371,7 +362,8 @@ last two off — require this order:
 
 **Changes that can destroy data.** Changing `name_prefix` replaces
 the cluster and database. Changing `db_name` or `db_user` replaces the database.
-Changing `vpc_cidr` replaces the VPC and its contents.
+When the module manages the VPC, changing `vpc_cidr` replaces the VPC and its
+contents.
 
 **Replace the device JWT signing key.** Replacing it invalidates enrolled-device
 JWTs; those devices must re-enroll.
