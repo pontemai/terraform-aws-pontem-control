@@ -75,8 +75,70 @@ variable "tags" {
 
 # ----- Networking -----
 
+variable "vpc_id" {
+  description = "Existing VPC to use without managing its networking. Null creates a dedicated VPC. Changing an existing deployment's VPC is not an in-place migration."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.vpc_id == null || can(regex("^vpc-([0-9a-f]{8}|[0-9a-f]{17})$", var.vpc_id))
+    error_message = "vpc_id must be null or a valid VPC ID."
+  }
+}
+
+variable "private_subnet_ids" {
+  description = "Existing private subnets for EKS and RDS, spanning at least two standard AZs in vpc_id. Internal ALBs also use this list, requiring one subnet per AZ. Empty when creating a VPC."
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = var.vpc_id == null ? length(var.private_subnet_ids) == 0 : length(var.private_subnet_ids) >= 2
+    error_message = "private_subnet_ids must be empty without vpc_id, or contain at least two subnets with vpc_id."
+  }
+
+  validation {
+    condition     = length(distinct(var.private_subnet_ids)) == length(var.private_subnet_ids) && alltrue([for id in var.private_subnet_ids : can(regex("^subnet-([0-9a-f]{8}|[0-9a-f]{17})$", id))])
+    error_message = "private_subnet_ids must contain distinct, valid subnet IDs."
+  }
+}
+
+variable "public_subnet_ids" {
+  description = "Existing ALB public subnets: one per AZ, in at least two standard AZs in vpc_id. Required for an internet-facing ALB with vpc_id; otherwise must be empty."
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = var.vpc_id != null && var.alb_scheme == "internet-facing" ? length(var.public_subnet_ids) >= 2 : length(var.public_subnet_ids) == 0
+    error_message = "public_subnet_ids requires at least two subnets for an internet-facing ALB with vpc_id; otherwise it must be empty."
+  }
+
+  validation {
+    condition     = length(distinct(var.public_subnet_ids)) == length(var.public_subnet_ids) && alltrue([for id in var.public_subnet_ids : can(regex("^subnet-([0-9a-f]{8}|[0-9a-f]{17})$", id))])
+    error_message = "public_subnet_ids must contain distinct, valid subnet IDs."
+  }
+
+  validation {
+    condition     = length(setintersection(var.private_subnet_ids, var.public_subnet_ids)) == 0
+    error_message = "private_subnet_ids and public_subnet_ids must not overlap."
+  }
+}
+
+variable "alb_scheme" {
+  description = "ALB scheme: internet-facing uses public subnets; internal uses private subnets and requires private client connectivity."
+  type        = string
+  default     = "internet-facing"
+  nullable    = false
+
+  validation {
+    condition     = contains(["internet-facing", "internal"], var.alb_scheme)
+    error_message = "alb_scheme must be internet-facing or internal."
+  }
+}
+
 variable "vpc_cidr" {
-  description = "CIDR block for the dedicated VPC. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database."
+  description = "CIDR block for the dedicated VPC; ignored when vpc_id is set. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database."
   type        = string
   default     = "10.0.0.0/16"
 
@@ -87,7 +149,7 @@ variable "vpc_cidr" {
 }
 
 variable "availability_zone_count" {
-  description = "How many availability zones to spread subnets across. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them."
+  description = "How many availability zones to spread managed subnets across; ignored when vpc_id is set. Two is the floor: EKS requires its control-plane subnets in at least two AZs, and so does the RDS subnet group even for a single-AZ instance. Raising it appends a subnet, NAT gateway, and route table per new zone and leaves the existing ones alone; lowering it destroys the highest-numbered zone's subnets and anything running in them."
   type        = number
   default     = 2
 
@@ -98,13 +160,13 @@ variable "availability_zone_count" {
 }
 
 variable "single_nat_gateway" {
-  description = "Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up."
+  description = "Managed-VPC setting, ignored when vpc_id is set. Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up."
   type        = bool
   default     = false
 }
 
 variable "enable_vpc_flow_logs" {
-  description = "Capture all VPC traffic metadata in CloudWatch. This adds CloudWatch ingestion and storage costs."
+  description = "Capture managed-VPC traffic metadata in CloudWatch. Ignored when vpc_id is set; existing VPC logging stays customer-managed. This adds CloudWatch ingestion and storage costs."
   type        = bool
   default     = true
 }

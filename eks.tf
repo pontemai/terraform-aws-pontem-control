@@ -106,7 +106,7 @@ resource "aws_eks_cluster" "this" {
     # on, restricted to cluster_endpoint_public_access_cidrs, so kubectl works
     # without standing up a bastion or a VPN first; the private endpoint is on
     # too so in-cluster traffic never leaves the VPC to reach the API.
-    subnet_ids              = aws_subnet.private[*].id
+    subnet_ids              = local.private_subnet_ids
     endpoint_public_access  = true
     endpoint_private_access = true
     public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
@@ -136,6 +136,7 @@ resource "aws_eks_cluster" "this" {
   tags = local.tags
 
   depends_on = [
+    data.aws_vpc.existing,
     aws_iam_role_policy_attachment.cluster_eks,
     aws_iam_role_policy_attachment.cluster_compute,
     aws_iam_role_policy_attachment.cluster_block_storage,

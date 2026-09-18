@@ -5,7 +5,9 @@
 # instance. The instance itself sits in one AZ unless db_multi_az is set.
 resource "aws_db_subnet_group" "this" {
   name       = var.name_prefix
-  subnet_ids = aws_subnet.private[*].id
+  subnet_ids = local.private_subnet_ids
+
+  depends_on = [data.aws_vpc.existing]
 
   tags = local.tags
 }
@@ -13,7 +15,7 @@ resource "aws_db_subnet_group" "this" {
 resource "aws_security_group" "db" {
   name_prefix = "${var.name_prefix}-db-"
   description = "RDS Postgres for pontem-control - admits only the EKS cluster security group."
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "Postgres from the EKS cluster and its nodes"

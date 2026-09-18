@@ -7,6 +7,8 @@ module "chart_values" {
   acm_certificate_arn = local.acm_certificate_arn
   cluster_name        = aws_eks_cluster.this.name
   route53_zone_id     = local.route53_zone_id
+  alb_scheme          = var.alb_scheme
+  alb_subnet_ids      = local.alb_subnet_ids
 
   db_password_secret_name            = aws_secretsmanager_secret.db_password.name
   device_jwt_signing_key_secret_name = aws_secretsmanager_secret.device_jwt_signing_key.name
@@ -40,13 +42,13 @@ output "update_kubeconfig_command" {
 # ----- Network -----
 
 output "vpc_id" {
-  description = "ID of the dedicated VPC. The join point for anything else you run in the same network."
-  value       = aws_vpc.this.id
+  description = "ID of the managed or supplied VPC. The join point for anything else you run in the same network."
+  value       = local.vpc_id
 }
 
 output "private_subnet_ids" {
   description = "Private subnet IDs. Nodes run here and the RDS subnet group spans them."
-  value       = aws_subnet.private[*].id
+  value       = local.private_subnet_ids
 }
 
 # ----- Database -----

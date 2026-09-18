@@ -98,7 +98,7 @@ run "default_configuration" {
   }
 
   assert {
-    condition     = length(aws_default_security_group.this.ingress) == 0 && length(aws_default_security_group.this.egress) == 0
+    condition     = length(aws_default_security_group.this[0].ingress) == 0 && length(aws_default_security_group.this[0].egress) == 0
     error_message = "The VPC default security group must have no ingress or egress rules so unused resources cannot communicate through its permissive AWS defaults."
   }
 
