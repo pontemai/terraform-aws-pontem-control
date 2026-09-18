@@ -128,8 +128,10 @@ subnets. For a private ALB, set `alb_scheme = "internal"` and omit
 need private connectivity to reach an internal ALB.
 
 All supplied subnets must belong to `vpc_id` in the provider's region. Private
-subnets must span at least two standard availability zones. ALB subnets must
-include exactly one subnet per AZ, in at least two AZs. IDs must be distinct and
+subnets must span at least two standard availability zones, as required by
+[EKS](https://docs.aws.amazon.com/eks/latest/userguide/network-reqs.html).
+[ALB subnets](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/application-load-balancers.html#subnets-load-balancer)
+must include exactly one subnet per AZ, in at least two AZs. IDs must be distinct and
 private/public lists must not overlap. The VPC must enable DNS support and DNS
 hostnames. The VPC ID and subnet list lengths must be known at plan time;
 individual subnet IDs can resolve during apply.
@@ -362,8 +364,8 @@ last two off — require this order:
 
 **Changes that can destroy data.** Changing `name_prefix` replaces
 the cluster and database. Changing `db_name` or `db_user` replaces the database.
-When the module manages the VPC, changing `vpc_cidr` replaces the VPC and its
-contents.
+When the module manages the VPC, changing `vpc_cidr` requires replacing the
+managed VPC and subnets.
 
 **Replace the device JWT signing key.** Replacing it invalidates enrolled-device
 JWTs; those devices must re-enroll.
