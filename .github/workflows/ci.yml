@@ -16,34 +16,38 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Run the minimum supported version so feature drift fails in CI.
-  TERRAFORM_VERSION: 1.11.4
   TFLINT_VERSION: v0.64.0
   TERRAFORM_DOCS_VERSION: v0.24.0
+  TERRAFORM_DOCS_SHA256: 9005daf969de0b50134493a2c00078b49f5f5b39d021cda7c89bf4d4f3d776d3
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        # Cover the minimum supported version and the current stable release.
+        terraform: [1.11.4, 1.16.3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
 
-      - uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
+      - uses: terraform-linters/setup-tflint@1cf010d3c7aef302051ccdb68c14c5dc2efa34ef # v6.3.1
         with:
           tflint_version: ${{ env.TFLINT_VERSION }}
 
       - name: Install terraform-docs
         run: |
           archive="terraform-docs-${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz"
-          checksums="terraform-docs-${TERRAFORM_DOCS_VERSION}.sha256sum"
           release="https://github.com/terraform-docs/terraform-docs/releases/download/${TERRAFORM_DOCS_VERSION}"
           curl -fsSLO "${release}/${archive}"
-          curl -fsSLO "${release}/${checksums}"
-          grep "  ${archive}$" "${checksums}" | sha256sum --check --strict
+          printf '%s  %s\n' "$TERRAFORM_DOCS_SHA256" "$archive" | sha256sum --check --strict
           tar -xzf "${archive}" terraform-docs
           install -m 0755 terraform-docs /usr/local/bin/terraform-docs
 
