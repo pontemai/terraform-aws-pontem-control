@@ -35,6 +35,7 @@ module "pontem_control" {
 | cp\_runtime\_assumed\_role\_arn | Session-stripped assumed-role ARN of the control-plane runtime role. Send this and aws\_account\_id to Pontem. |
 | db\_password\_secret\_name | Secrets Manager name of the database password. |
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device JWT signing key. |
+| device\_secret\_pepper\_secret\_name | Secrets Manager name of the device secret pepper. |
 | helm\_values | Chart values for this deployment. |
 | namespace | Namespace to install the chart into. |
 | route53\_name\_servers | Name servers for a hosted zone created by the module. |

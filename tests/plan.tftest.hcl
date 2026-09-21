@@ -321,19 +321,20 @@ run "default_configuration" {
     error_message = "The boot secrets must not sit inside the tenant-* prefixes the application pods can read."
   }
 
-  # ----- Secrets: exactly two, and named off name_prefix -----
+  # ----- Secrets: exactly three, and named off name_prefix -----
 
   assert {
-    condition     = aws_secretsmanager_secret.db_password.name == "pontem-control-db-password" && aws_secretsmanager_secret.device_jwt_signing_key.name == "pontem-control-device-jwt-signing-key"
+    condition     = aws_secretsmanager_secret.db_password.name == "pontem-control-db-password" && aws_secretsmanager_secret.device_jwt_signing_key.name == "pontem-control-device-jwt-signing-key" && aws_secretsmanager_secret.device_secret_pepper.name == "pontem-control-device-secret-pepper"
     error_message = "Secret names must derive from name_prefix so two stacks in one account do not collide."
   }
 
   assert {
     condition = (
       aws_secretsmanager_secret_version.db_password.secret_string_wo_version == 1 &&
-      aws_secretsmanager_secret_version.device_jwt_signing_key.secret_string_wo_version == 1
+      aws_secretsmanager_secret_version.device_jwt_signing_key.secret_string_wo_version == 1 &&
+      aws_secretsmanager_secret_version.device_secret_pepper.secret_string_wo_version == 1
     )
-    error_message = "Both boot secrets must use write-only values with explicit versions so neither secret is stored in Terraform state."
+    error_message = "All three boot secrets must use write-only values with explicit versions so no secret is stored in Terraform state."
   }
 
   # ----- ACM: no waiter without a hosted zone -----
@@ -471,6 +472,14 @@ run "external_secrets_reads_only_the_boot_secrets" {
     }
   }
 
+  override_resource {
+    target          = aws_secretsmanager_secret.device_secret_pepper
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pontem-control-device-secret-pepper"
+    }
+  }
+
   assert {
     condition = try(
       length(jsondecode(aws_iam_role_policy.eso.policy).Statement) == 1 &&
@@ -481,10 +490,11 @@ run "external_secrets_reads_only_the_boot_secrets" {
       toset(jsondecode(aws_iam_role_policy.eso.policy).Statement[0].Resource) == toset([
         aws_secretsmanager_secret.db_password.arn,
         aws_secretsmanager_secret.device_jwt_signing_key.arn,
+        aws_secretsmanager_secret.device_secret_pepper.arn,
       ]),
       false,
     )
-    error_message = "The External Secrets Operator policy must grant only read access to the two boot secrets."
+    error_message = "The External Secrets Operator policy must grant only read access to the three boot secrets."
   }
 }
 
@@ -648,6 +658,11 @@ run "create_route53_zone_gets_the_same_automation_as_an_existing_zone" {
   }
 
   assert {
+    condition     = yamldecode(output.helm_values).awsTurnkey.deviceSecretPepperSecretName == output.device_secret_pepper_secret_name
+    error_message = "The module-owned pepper name must reach the generated Helm values."
+  }
+
+  assert {
     condition     = toset(output.route53_name_servers) == toset(["ns-1.awsdns.example", "ns-2.awsdns.example"])
     error_message = "route53_name_servers must return the new zone's delegation servers."
   }
@@ -684,5 +699,28 @@ run "name_prefix_flows_into_every_resource_name" {
   assert {
     condition     = aws_cloudwatch_log_group.cluster.name == "/aws/eks/acme-pontem/cluster"
     error_message = "The log group must match the name EKS would auto-create, or EKS creates a second one with never-expire retention."
+  }
+}
+
+run "pepper_rotation_is_independent" {
+  command = plan
+  variables {
+    device_secret_pepper_version = 2
+  }
+  assert {
+    condition = (
+      aws_secretsmanager_secret_version.device_secret_pepper.secret_string_wo_version == 2 &&
+      aws_secretsmanager_secret_version.device_jwt_signing_key.secret_string_wo_version == 1 &&
+      aws_secretsmanager_secret_version.db_password.secret_string_wo_version == 1 &&
+      aws_db_instance.this.password_wo_version == 1
+    )
+    error_message = "Pepper rotation must not change signing-key or database password versions."
+  }
+  assert {
+    condition = (
+      output.device_secret_pepper_secret_name == "pontem-control-device-secret-pepper" &&
+      aws_secretsmanager_secret.device_secret_pepper.recovery_window_in_days == 30
+    )
+    error_message = "The recoverable pepper secret name must reach the root output."
   }
 }

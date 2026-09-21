@@ -63,7 +63,7 @@ variable "name_prefix" {
   # Keep boot-secret names outside the tenant-secret grants in locals.tf.
   validation {
     condition     = !can(regex("^(registry-)?tenant", var.name_prefix))
-    error_message = "name_prefix must not begin with \"tenant\" or \"registry-tenant\": those prefixes name the per-tenant secrets the application pods can already read, so the module's own database password and signing key would fall inside that grant."
+    error_message = "name_prefix must not begin with \"tenant\" or \"registry-tenant\": those prefixes name the per-tenant secrets the application pods can already read, so the module's own database password, signing key, and pepper would fall inside that grant."
   }
 }
 
@@ -308,6 +308,18 @@ variable "device_jwt_signing_key_version" {
   validation {
     condition     = var.device_jwt_signing_key_version >= 1 && floor(var.device_jwt_signing_key_version) == var.device_jwt_signing_key_version
     error_message = "device_jwt_signing_key_version must be a positive whole number."
+  }
+}
+
+variable "device_secret_pepper_version" {
+  description = "Version of the generated device secret pepper. Increase only for deliberate rotation; running devices re-key their caches after receiving the new pepper."
+  type        = number
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.device_secret_pepper_version >= 1 && floor(var.device_secret_pepper_version) == var.device_secret_pepper_version
+    error_message = "device_secret_pepper_version must be a positive whole number."
   }
 }
 

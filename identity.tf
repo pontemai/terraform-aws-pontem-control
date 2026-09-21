@@ -233,7 +233,7 @@ moved {
 
 resource "aws_iam_role" "eso" {
   name               = "${var.name_prefix}-external-secrets"
-  description        = "External Secrets Operator controller in ${var.name_prefix}, assumed via EKS Pod Identity. Read-only on this module's two boot secrets."
+  description        = "External Secrets Operator controller in ${var.name_prefix}, assumed via EKS Pod Identity. Read-only on this module's three boot secrets."
   assume_role_policy = local.pod_identity_assume_role_policies.eso
 
   tags = local.tags
@@ -253,6 +253,7 @@ resource "aws_iam_role_policy" "eso" {
       Resource = [
         aws_secretsmanager_secret.db_password.arn,
         aws_secretsmanager_secret.device_jwt_signing_key.arn,
+        aws_secretsmanager_secret.device_secret_pepper.arn,
       ]
     }]
   })

@@ -15,6 +15,7 @@ variables {
 
   db_password_secret_name            = "pontem-control-db-password"
   device_jwt_signing_key_secret_name = "pontem-control-device-jwt-signing-key"
+  device_secret_pepper_secret_name   = "pontem-control-device-secret-pepper"
   device_telemetry_log_group_name    = "/pontem-control/device"
   device_telemetry_writer_role_arn   = "arn:aws:iam::123456789012:role/pontem-control-device-telemetry-writer"
 
@@ -60,8 +61,9 @@ run "values_satisfy_the_chart_contract" {
       certificateArn                = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-2222-3333-4444-555555555555"
       dbPasswordSecretName          = "pontem-control-db-password"
       deviceJwtSigningKeySecretName = "pontem-control-device-jwt-signing-key"
+      deviceSecretPepperSecretName  = "pontem-control-device-secret-pepper"
     }, false)
-    error_message = "awsTurnkey must enable the chart-owned AWS resources and identify the ACM certificate and both boot secrets."
+    error_message = "awsTurnkey must enable the chart-owned AWS resources and identify the ACM certificate and all three boot secrets."
   }
 
   assert {

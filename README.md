@@ -13,7 +13,7 @@ install below.
   zones. You can also supply an existing VPC and subnets.
 - An EKS Auto Mode cluster.
 - A private, Multi-AZ RDS Postgres instance.
-- Secrets Manager secrets for the database password and device JWT signing key.
+- Secrets Manager secrets for the database password, device JWT signing key, and device secret pepper.
 - CloudWatch log groups for EKS and RDS, plus VPC Flow Logs for a managed VPC.
 - An ACM certificate for `app_domain_name` and, when requested, a Route53 hosted
   zone.
@@ -23,7 +23,7 @@ install below.
   that hosted zone and `app_domain_name`.
 
 The Helm release installs External Secrets Operator, creates the application
-Secret from the two Secrets Manager secrets, and creates the `alb` IngressClass.
+Secret from the three Secrets Manager secrets, and creates the `alb` IngressClass.
 When either Route53 option is set, it also installs ExternalDNS for the
 application hostname.
 
@@ -107,8 +107,8 @@ output "route53_name_servers" {
 
 Use the module version Pontem gives you. Do not source the `develop` branch.
 
-Terraform plans and state do not contain the generated database password or
-device JWT signing key. Raising either secret-version input rotates that secret;
+Terraform plans and state do not contain the generated database password,
+device JWT signing key, or device secret pepper. Raising a secret-version input rotates that secret;
 database rotation needs a pod rollout, and signing-key rotation invalidates
 active device JWTs.
 
@@ -370,6 +370,40 @@ managed VPC and subnets.
 **Replace the device JWT signing key.** Replacing it invalidates enrolled-device
 JWTs; those devices must re-enroll.
 
+### Configure and rotate the device secret pepper
+
+The module creates `<name_prefix>-device-secret-pepper` in your AWS account.
+Only its name appears in `helm_values` and `device_secret_pepper_secret_name`;
+the pepper value stays out of Terraform plans and state.
+
+For an upgrade, select the module and chart versions supplied by Pontem. The
+chart must support `awsTurnkey.deviceSecretPepperSecretName` and mount
+`DEVICE_SECRET_PEPPER` into the API through `DEVICE_SECRET_PEPPER_FILE`.
+Record both versions for each deployment; development and production may use
+different pins.
+
+1. Run `terraform plan` and review it before applying. Adding the pepper creates
+   its secret and version and extends the ESO read policy. The database password
+   and signing key must not be replaced or rotated.
+2. After the approved apply, regenerate `values.yaml` and run the pinned Helm
+   command in Deploy step 4. Direct users of `modules/chart_values` must supply
+   `device_secret_pepper_secret_name`.
+3. Check that the ExternalSecret reports `SecretSynced`. Check each API replica
+   for `device secret pepper: configured` with a file source. Confirm an enrolled
+   device receives managed secrets; API health alone does not prove delivery.
+
+To rotate, increase `device_secret_pepper_version` from its current value, review
+the plan, and apply. Leave the database and signing-key version inputs unchanged.
+Ordinary applies with the same version keep the existing pepper.
+
+The chart syncs the source secret hourly. Allow for Kubernetes volume propagation
+and the API's 60-second pepper cache. With the mounted-file chart, API pods do not
+need restarting. Match the new fingerprint in the API's
+`device secret pepper rotated: <old> -> <new>` log with the device's
+`Adopted secret pepper <new>` log. Offline devices adopt it after reconnecting.
+See the chart's [pepper operations guide](https://github.com/pontemai/pontem-mvp/blob/develop/helm/pontem-control/docs/operations.md#device-secret-pepper)
+for cache recovery behavior.
+
 ## Troubleshooting
 
 **The ExternalSecret does not report `SecretSynced`.** Confirm the release uses
@@ -457,7 +491,7 @@ Contributing requires Terraform 1.11.4 or newer.
 
 | Name | Version |
 | ---- | ------- |
-| aws | 6.65.0 |
+| aws | 6.66.0 |
 
 ## Resources
 
@@ -509,8 +543,10 @@ Contributing requires Terraform 1.11.4 or newer.
 | [aws_route_table_association.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table_association) | resource |
 | [aws_secretsmanager_secret.db_password](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.device_jwt_signing_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
+| [aws_secretsmanager_secret.device_secret_pepper](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret_version.db_password](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.device_jwt_signing_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
+| [aws_secretsmanager_secret_version.device_secret_pepper](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_security_group.db](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group) | resource |
 | [aws_subnet.private](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet) | resource |
 | [aws_subnet.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet) | resource |
@@ -555,6 +591,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | db\_password\_version | Version of the generated database password. Raising it changes the secret and RDS password, but running pods keep the old value until restarted. | `number` | `1` | no |
 | db\_user | Postgres user the application authenticates as. This is the instance's master user, so it is created with the instance; CHANGING IT REPLACES THE DATABASE. | `string` | `"app"` | no |
 | device\_jwt\_signing\_key\_version | Version of the generated device JWT signing key. Raising this value invalidates every enrolled device's JWT. | `number` | `1` | no |
+| device\_secret\_pepper\_version | Version of the generated device secret pepper. Increase only for deliberate rotation; running devices re-key their caches after receiving the new pepper. | `number` | `1` | no |
 | distribution | Per-tenant agent distribution sources rendered into the chart values. Registry rows and credentials must already exist in the control plane. | <pre>object({<br/>    tenants = map(object({<br/>      agent = optional(object({<br/>        registryId    = string<br/>        allowFallback = optional(bool)<br/>      }))<br/>    }))<br/>  })</pre> | `null` | no |
 | enable\_vpc\_flow\_logs | Capture managed-VPC traffic metadata in CloudWatch. Ignored when vpc\_id is set; existing VPC logging stays customer-managed. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
@@ -585,6 +622,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | db\_endpoint | RDS endpoint hostname, without the port. |
 | db\_password\_secret\_name | Secrets Manager name of the database password rendered into helm\_values. |
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name of the device-JWT signing key rendered into helm\_values. |
+| device\_secret\_pepper\_secret\_name | Secrets Manager name of the device secret pepper rendered into helm\_values. |
 | helm\_values | Rendered pontem-control chart values for this deployment. Write it to a file with `terraform output -raw helm_values > values.yaml` and pass it to helm. |
 | namespace | Namespace to install the chart into. The Pod Identity associations bind service accounts in this namespace, so `helm install -n` must match it. |
 | private\_subnet\_ids | Private subnet IDs. Nodes run here and the RDS subnet group spans them. |

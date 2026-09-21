@@ -65,3 +65,8 @@ output "cp_runtime_assumed_role_arn" {
   description = "Session-stripped assumed-role ARN of the control-plane runtime role. Send this and aws_account_id to Pontem."
   value       = module.pontem_control.cp_runtime_assumed_role_arn
 }
+
+output "device_secret_pepper_secret_name" {
+  description = "Secrets Manager name of the device secret pepper."
+  value       = module.pontem_control.device_secret_pepper_secret_name
+}
