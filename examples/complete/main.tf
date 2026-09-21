@@ -34,6 +34,9 @@ module "pontem_control" {
 
   # ----- Optional -----
 
+  # Increase only for deliberate pepper rotation; see the README rotation steps.
+  # device_secret_pepper_version = 1
+
   # Required only for GCP-backed features such as Pontem-managed packages.
   # wif_audience = "//iam.googleapis.com/projects/…/providers/aws-eks"
 

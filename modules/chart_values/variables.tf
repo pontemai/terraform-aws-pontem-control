@@ -120,3 +120,8 @@ variable "alb_subnet_ids" {
   default     = []
   nullable    = false
 }
+
+variable "device_secret_pepper_secret_name" {
+  description = "Secrets Manager name containing DEVICE_SECRET_PEPPER; becomes awsTurnkey.deviceSecretPepperSecretName."
+  type        = string
+}

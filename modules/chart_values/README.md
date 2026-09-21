@@ -37,6 +37,7 @@ comments.
 | db\_port | RDS Postgres port. | `number` | n/a | yes |
 | db\_user | Application database user. | `string` | n/a | yes |
 | device\_jwt\_signing\_key\_secret\_name | Secrets Manager name containing DEVICE\_JWT\_SIGNING\_KEY; becomes awsTurnkey.deviceJwtSigningKeySecretName. | `string` | n/a | yes |
+| device\_secret\_pepper\_secret\_name | Secrets Manager name containing DEVICE\_SECRET\_PEPPER; becomes awsTurnkey.deviceSecretPepperSecretName. | `string` | n/a | yes |
 | device\_telemetry\_log\_group\_name | CloudWatch log group for device logs; becomes observability.aws.logGroup. | `string` | n/a | yes |
 | device\_telemetry\_writer\_role\_arn | Role assumed for device telemetry writes; becomes observability.aws.writerRoleArn. | `string` | n/a | yes |
 | oidc\_audience | OIDC API audience, rendered for both the API's validation and the admin app's token request. One value, two consumers — they have to agree. | `string` | n/a | yes |

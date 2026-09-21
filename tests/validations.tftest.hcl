@@ -294,3 +294,27 @@ run "rejects_fractional_device_jwt_signing_key_version" {
 
   expect_failures = [var.device_jwt_signing_key_version]
 }
+
+run "rejects_zero_device_secret_pepper_version" {
+  command = plan
+  variables {
+    device_secret_pepper_version = 0
+  }
+  expect_failures = [var.device_secret_pepper_version]
+}
+
+run "rejects_negative_device_secret_pepper_version" {
+  command = plan
+  variables {
+    device_secret_pepper_version = -1
+  }
+  expect_failures = [var.device_secret_pepper_version]
+}
+
+run "rejects_fractional_device_secret_pepper_version" {
+  command = plan
+  variables {
+    device_secret_pepper_version = 1.5
+  }
+  expect_failures = [var.device_secret_pepper_version]
+}
