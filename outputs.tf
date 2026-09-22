@@ -12,7 +12,7 @@ module "chart_values" {
 
   db_password_secret_name            = aws_secretsmanager_secret.db_password.name
   device_jwt_signing_key_secret_name = aws_secretsmanager_secret.device_jwt_signing_key.name
-  device_secret_pepper_secret_name   = aws_secretsmanager_secret.device_secret_pepper.name
+  device_secret_pepper_secret_name   = local.device_secret_pepper_secret.name
   device_telemetry_log_group_name    = aws_cloudwatch_log_group.device_telemetry.name
   device_telemetry_writer_role_arn   = aws_iam_role.device_telemetry_writer.arn
 
@@ -130,5 +130,5 @@ output "namespace" {
 
 output "device_secret_pepper_secret_name" {
   description = "Secrets Manager name of the device secret pepper rendered into helm_values."
-  value       = aws_secretsmanager_secret.device_secret_pepper.name
+  value       = local.device_secret_pepper_secret.name
 }

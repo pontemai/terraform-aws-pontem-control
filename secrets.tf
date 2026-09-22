@@ -46,11 +46,38 @@ resource "aws_secretsmanager_secret_version" "device_jwt_signing_key" {
   secret_string_wo_version = var.device_jwt_signing_key_version
 }
 
+locals {
+  create_device_secret_pepper = var.existing_device_secret_pepper_secret_arn == null
+  device_secret_pepper_secret = {
+    arn  = local.create_device_secret_pepper ? aws_secretsmanager_secret.device_secret_pepper[0].arn : var.existing_device_secret_pepper_secret_arn
+    name = local.create_device_secret_pepper ? aws_secretsmanager_secret.device_secret_pepper[0].name : data.aws_secretsmanager_secret.device_secret_pepper[0].name
+  }
+}
+
+# Metadata only: the caller owns the existing value and its rotation.
+data "aws_secretsmanager_secret" "device_secret_pepper" {
+  count = local.create_device_secret_pepper ? 0 : 1
+  arn   = var.existing_device_secret_pepper_secret_arn
+}
+
+moved {
+  from = aws_secretsmanager_secret.device_secret_pepper
+  to   = aws_secretsmanager_secret.device_secret_pepper[0]
+}
+
+moved {
+  from = aws_secretsmanager_secret_version.device_secret_pepper
+  to   = aws_secretsmanager_secret_version.device_secret_pepper[0]
+}
+
 ephemeral "random_bytes" "device_secret_pepper" {
+  count  = local.create_device_secret_pepper ? 1 : 0
   length = 32
 }
 
 resource "aws_secretsmanager_secret" "device_secret_pepper" {
+  count = local.create_device_secret_pepper ? 1 : 0
+
   name                    = "${var.name_prefix}-device-secret-pepper"
   description             = "Device secret cache pepper for pontem-control (DEVICE_SECRET_PEPPER): standard base64 of exactly 32 bytes."
   recovery_window_in_days = var.secret_recovery_window_days
@@ -59,7 +86,9 @@ resource "aws_secretsmanager_secret" "device_secret_pepper" {
 }
 
 resource "aws_secretsmanager_secret_version" "device_secret_pepper" {
-  secret_id                = aws_secretsmanager_secret.device_secret_pepper.id
-  secret_string_wo         = ephemeral.random_bytes.device_secret_pepper.base64
+  count = local.create_device_secret_pepper ? 1 : 0
+
+  secret_id                = aws_secretsmanager_secret.device_secret_pepper[0].id
+  secret_string_wo         = ephemeral.random_bytes.device_secret_pepper[0].base64
   secret_string_wo_version = var.device_secret_pepper_version
 }

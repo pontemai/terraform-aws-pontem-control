@@ -372,9 +372,34 @@ JWTs; those devices must re-enroll.
 
 ### Configure and rotate the device secret pepper
 
-The module creates `<name_prefix>-device-secret-pepper` in your AWS account.
+By default, the module creates `<name_prefix>-device-secret-pepper` in your AWS account.
 Only its name appears in `helm_values` and `device_secret_pepper_secret_name`;
 the pepper value stays out of Terraform plans and state.
+
+To use an existing secret, set `existing_device_secret_pepper_secret_arn` to its
+full ARN, including the six-character suffix. It must be in the provider's
+account and region, outside the `tenant-` and `registry-tenant-` namespaces.
+Its `AWSCURRENT` value must be a plain string containing standard base64 of
+exactly 32 bytes. Terraform reads metadata only; it does not check the value.
+The module creates no pepper secret, version, or random bytes in this mode.
+You own its value and rotation; `device_secret_pepper_version` has no effect.
+The Terraform identity needs `secretsmanager:DescribeSecret` on that ARN.
+
+For a customer-managed KMS key, the caller must grant the ESO role
+`arn:aws:iam::<account>:role/<name_prefix>-external-secrets` `kms:Decrypt` on
+that exact key before deployment. The key policy must permit that role, either
+directly or through its IAM permissions. Restrict the grant with
+`kms:ViaService = secretsmanager.<region>.amazonaws.com` and
+`kms:EncryptionContext:SecretARN = <full-secret-arn>`. The module adds no KMS
+grant. See [AWS secret encryption permissions](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html).
+
+**Switching an already managed pepper to existing mode plans deletion of the
+managed secret and its version, even if the supplied ARN names that same secret.**
+Stop if the plan proposes either deletion. First arrange a separately reviewed
+handoff that removes both pepper resources from this module's state without
+deleting them, and transfers ownership to the caller. This module does not
+perform that handoff. Upgrading while keeping generated mode uses moved
+addresses and must not replace the secret or rotate its version.
 
 For an upgrade, select the module and chart versions supplied by Pontem. The
 chart must support `awsTurnkey.deviceSecretPepperSecretName` and mount
@@ -392,7 +417,7 @@ different pins.
    for `device secret pepper: configured` with a file source. Confirm an enrolled
    device receives managed secrets; API health alone does not prove delivery.
 
-To rotate, increase `device_secret_pepper_version` from its current value, review
+To rotate a generated pepper, increase `device_secret_pepper_version` from its current value, review
 the plan, and apply. Leave the database and signing-key version inputs unchanged.
 Ordinary applies with the same version keep the existing pepper.
 
@@ -560,6 +585,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | [aws_iam_policy_document.device_telemetry_writer_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.node_assume](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
+| [aws_secretsmanager_secret.device_secret_pepper](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/secretsmanager_secret) | data source |
 | [aws_subnet.private](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet) | data source |
 | [aws_subnet.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet) | data source |
 | [aws_vpc.existing](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/vpc) | data source |
@@ -594,6 +620,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | device\_secret\_pepper\_version | Version of the generated device secret pepper. Increase only for deliberate rotation; running devices re-key their caches after receiving the new pepper. | `number` | `1` | no |
 | distribution | Per-tenant agent distribution sources rendered into the chart values. Registry rows and credentials must already exist in the control plane. | <pre>object({<br/>    tenants = map(object({<br/>      agent = optional(object({<br/>        registryId    = string<br/>        allowFallback = optional(bool)<br/>      }))<br/>    }))<br/>  })</pre> | `null` | no |
 | enable\_vpc\_flow\_logs | Capture managed-VPC traffic metadata in CloudWatch. Ignored when vpc\_id is set; existing VPC logging stays customer-managed. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
+| existing\_device\_secret\_pepper\_secret\_arn | Full ARN of an existing device pepper secret in the provider's account and region. Null generates a pepper. The caller owns its value (standard base64 of 32 bytes), rotation, and any customer-managed KMS decryption grant for the ESO role. See the README before switching a generated pepper to existing mode. | `string` | `null` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
