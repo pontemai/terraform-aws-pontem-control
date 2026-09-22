@@ -324,7 +324,7 @@ run "default_configuration" {
   # ----- Secrets: exactly three, and named off name_prefix -----
 
   assert {
-    condition     = aws_secretsmanager_secret.db_password.name == "pontem-control-db-password" && aws_secretsmanager_secret.device_jwt_signing_key.name == "pontem-control-device-jwt-signing-key" && aws_secretsmanager_secret.device_secret_pepper.name == "pontem-control-device-secret-pepper"
+    condition     = aws_secretsmanager_secret.db_password.name == "pontem-control-db-password" && aws_secretsmanager_secret.device_jwt_signing_key.name == "pontem-control-device-jwt-signing-key" && aws_secretsmanager_secret.device_secret_pepper[0].name == "pontem-control-device-secret-pepper"
     error_message = "Secret names must derive from name_prefix so two stacks in one account do not collide."
   }
 
@@ -332,7 +332,7 @@ run "default_configuration" {
     condition = (
       aws_secretsmanager_secret_version.db_password.secret_string_wo_version == 1 &&
       aws_secretsmanager_secret_version.device_jwt_signing_key.secret_string_wo_version == 1 &&
-      aws_secretsmanager_secret_version.device_secret_pepper.secret_string_wo_version == 1
+      aws_secretsmanager_secret_version.device_secret_pepper[0].secret_string_wo_version == 1
     )
     error_message = "All three boot secrets must use write-only values with explicit versions so no secret is stored in Terraform state."
   }
@@ -473,7 +473,7 @@ run "external_secrets_reads_only_the_boot_secrets" {
   }
 
   override_resource {
-    target          = aws_secretsmanager_secret.device_secret_pepper
+    target          = aws_secretsmanager_secret.device_secret_pepper[0]
     override_during = plan
     values = {
       arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pontem-control-device-secret-pepper"
@@ -490,7 +490,7 @@ run "external_secrets_reads_only_the_boot_secrets" {
       toset(jsondecode(aws_iam_role_policy.eso.policy).Statement[0].Resource) == toset([
         aws_secretsmanager_secret.db_password.arn,
         aws_secretsmanager_secret.device_jwt_signing_key.arn,
-        aws_secretsmanager_secret.device_secret_pepper.arn,
+        aws_secretsmanager_secret.device_secret_pepper[0].arn,
       ]),
       false,
     )
@@ -702,6 +702,88 @@ run "name_prefix_flows_into_every_resource_name" {
   }
 }
 
+run "existing_pepper_reaches_helm" {
+  command = plan
+
+  variables {
+    existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:retained-pepper-Ab12Cd"
+  }
+
+  override_resource {
+    target          = aws_acm_certificate.app
+    override_during = plan
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/example"
+    }
+  }
+
+  override_resource {
+    target          = aws_db_instance.this
+    override_during = plan
+    values = {
+      address = "db.example.com"
+    }
+  }
+
+  override_resource {
+    target          = aws_subnet.public
+    override_during = plan
+    values = {
+      id = "subnet-example"
+    }
+  }
+
+  override_data {
+    target = data.aws_secretsmanager_secret.device_secret_pepper[0]
+    values = {
+      name = "retained-pepper"
+    }
+  }
+
+  override_resource {
+    target          = aws_secretsmanager_secret.db_password
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pontem-control-db-password-Ab12Cd"
+    }
+  }
+
+  override_resource {
+    target          = aws_secretsmanager_secret.device_jwt_signing_key
+    override_during = plan
+    values = {
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pontem-control-device-jwt-signing-key-Ab12Cd"
+    }
+  }
+
+  assert {
+    condition = (
+      length(aws_secretsmanager_secret.device_secret_pepper) == 0 &&
+      length(aws_secretsmanager_secret_version.device_secret_pepper) == 0
+    )
+    error_message = "Existing mode must not create or write a pepper secret."
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.eso.policy).Statement[0].Resource) == toset([
+      aws_secretsmanager_secret.db_password.arn,
+      aws_secretsmanager_secret.device_jwt_signing_key.arn,
+      var.existing_device_secret_pepper_secret_arn,
+    ])
+    error_message = "ESO must read the supplied pepper, without granting access to another pepper."
+  }
+
+  assert {
+    condition     = yamldecode(output.helm_values).awsTurnkey.deviceSecretPepperSecretName == "retained-pepper"
+    error_message = "The existing pepper name must reach Helm."
+  }
+
+  assert {
+    condition     = output.device_secret_pepper_secret_name == "retained-pepper"
+    error_message = "The existing pepper name must reach the root output."
+  }
+}
+
 run "pepper_rotation_is_independent" {
   command = plan
   variables {
@@ -709,7 +791,7 @@ run "pepper_rotation_is_independent" {
   }
   assert {
     condition = (
-      aws_secretsmanager_secret_version.device_secret_pepper.secret_string_wo_version == 2 &&
+      aws_secretsmanager_secret_version.device_secret_pepper[0].secret_string_wo_version == 2 &&
       aws_secretsmanager_secret_version.device_jwt_signing_key.secret_string_wo_version == 1 &&
       aws_secretsmanager_secret_version.db_password.secret_string_wo_version == 1 &&
       aws_db_instance.this.password_wo_version == 1
@@ -719,7 +801,7 @@ run "pepper_rotation_is_independent" {
   assert {
     condition = (
       output.device_secret_pepper_secret_name == "pontem-control-device-secret-pepper" &&
-      aws_secretsmanager_secret.device_secret_pepper.recovery_window_in_days == 30
+      aws_secretsmanager_secret.device_secret_pepper[0].recovery_window_in_days == 30
     )
     error_message = "The recoverable pepper secret name must reach the root output."
   }

@@ -34,7 +34,11 @@ module "pontem_control" {
 
   # ----- Optional -----
 
-  # Increase only for deliberate pepper rotation; see the README rotation steps.
+  # Optional caller-owned pepper in this provider's account and region.
+  # See the README for KMS grants and the generated-to-existing handoff.
+  # existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:acme-device-secret-pepper-Ab12Cd"
+
+  # Increase only for deliberate generated pepper rotation; see the README.
   # device_secret_pepper_version = 1
 
   # Required only for GCP-backed features such as Pontem-managed packages.

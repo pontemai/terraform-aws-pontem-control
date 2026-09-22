@@ -253,7 +253,7 @@ resource "aws_iam_role_policy" "eso" {
       Resource = [
         aws_secretsmanager_secret.db_password.arn,
         aws_secretsmanager_secret.device_jwt_signing_key.arn,
-        aws_secretsmanager_secret.device_secret_pepper.arn,
+        local.device_secret_pepper_secret.arn,
       ]
     }]
   })

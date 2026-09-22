@@ -318,3 +318,59 @@ run "rejects_fractional_device_secret_pepper_version" {
   }
   expect_failures = [var.device_secret_pepper_version]
 }
+
+run "rejects_existing_pepper_name" {
+  command = plan
+  variables {
+    existing_device_secret_pepper_secret_arn = "retained-pepper"
+  }
+  expect_failures = [var.existing_device_secret_pepper_secret_arn]
+}
+
+run "rejects_existing_pepper_partial_arn" {
+  command = plan
+  variables {
+    existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pepper"
+  }
+  expect_failures = [var.existing_device_secret_pepper_secret_arn]
+}
+
+run "rejects_existing_pepper_region" {
+  command = plan
+  variables {
+    existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:pepper-Ab12Cd"
+  }
+  expect_failures = [var.existing_device_secret_pepper_secret_arn]
+}
+
+run "rejects_existing_pepper_account" {
+  command = plan
+  variables {
+    existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:999999999999:secret:pepper-Ab12Cd"
+  }
+  expect_failures = [var.existing_device_secret_pepper_secret_arn]
+}
+
+run "rejects_existing_pepper_wildcard" {
+  command = plan
+  variables {
+    existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:pepper-*-Ab12Cd"
+  }
+  expect_failures = [var.existing_device_secret_pepper_secret_arn]
+}
+
+run "rejects_existing_pepper_tenant_prefix" {
+  command = plan
+  variables {
+    existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:tenant-pepper-Ab12Cd"
+  }
+  expect_failures = [var.existing_device_secret_pepper_secret_arn]
+}
+
+run "rejects_existing_pepper_registry_tenant_prefix" {
+  command = plan
+  variables {
+    existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:registry-tenant-pepper-Ab12Cd"
+  }
+  expect_failures = [var.existing_device_secret_pepper_secret_arn]
+}

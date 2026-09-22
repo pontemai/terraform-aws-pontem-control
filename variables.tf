@@ -311,6 +311,25 @@ variable "device_jwt_signing_key_version" {
   }
 }
 
+variable "existing_device_secret_pepper_secret_arn" {
+  description = "Full ARN of an existing device pepper secret in the provider's account and region. Null generates a pepper. The caller owns its value (standard base64 of 32 bytes), rotation, and any customer-managed KMS decryption grant for the ESO role. See the README before switching a generated pepper to existing mode."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.existing_device_secret_pepper_secret_arn == null ? true : can(regex(
+      "^arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$",
+      var.existing_device_secret_pepper_secret_arn,
+    ))
+    error_message = "existing_device_secret_pepper_secret_arn must be a full Secrets Manager ARN (including its six-character suffix) in the provider's account and region."
+  }
+
+  validation {
+    condition     = var.existing_device_secret_pepper_secret_arn == null ? true : !can(regex(":secret:(tenant-|registry-tenant-)", var.existing_device_secret_pepper_secret_arn))
+    error_message = "The pepper must not use a tenant- or registry-tenant- name: runtime pods can write to those secrets."
+  }
+}
+
 variable "device_secret_pepper_version" {
   description = "Version of the generated device secret pepper. Increase only for deliberate rotation; running devices re-key their caches after receiving the new pepper."
   type        = number
