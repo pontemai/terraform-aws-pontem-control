@@ -372,62 +372,57 @@ JWTs; those devices must re-enroll.
 
 ### Configure and rotate the device secret pepper
 
-By default, the module creates `<name_prefix>-device-secret-pepper` in your AWS account.
-Only its name appears in `helm_values` and `device_secret_pepper_secret_name`;
-the pepper value stays out of Terraform plans and state.
+Two ways to configure it:
 
-To use an existing secret, set `existing_device_secret_pepper_secret_arn` to its
-full ARN, including the six-character suffix. It must be in the provider's
-account and region, outside the `tenant-` and `registry-tenant-` namespaces.
-Its `AWSCURRENT` value must be a plain string containing standard base64 of
-exactly 32 bytes. Terraform reads metadata only; it does not check the value.
-The module creates no pepper secret, version, or random bytes in this mode.
-You own its value and rotation; `device_secret_pepper_version` has no effect.
-The Terraform identity needs `secretsmanager:DescribeSecret` on that ARN.
+- **Use a secret you already own** — set `existing_device_secret_pepper_secret_arn`
+  to its full ARN. You own the value and its rotation, and
+  `device_secret_pepper_version` has no effect.
+- **Let the module create one** — leave that input unset. The module creates
+  `<name_prefix>-device-secret-pepper`; raise `device_secret_pepper_version` to
+  rotate it.
 
-For a customer-managed KMS key, the caller must grant the ESO role
-`arn:aws:iam::<account>:role/<name_prefix>-external-secrets` `kms:Decrypt` on
-that exact key before deployment. The key policy must permit that role, either
-directly or through its IAM permissions. Restrict the grant with
-`kms:ViaService = secretsmanager.<region>.amazonaws.com` and
-`kms:EncryptionContext:SecretARN = <full-secret-arn>`. The module adds no KMS
-grant. See [AWS secret encryption permissions](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html).
+Either way, only the secret's name reaches `helm_values` and
+`device_secret_pepper_secret_name` — never the value.
 
-**Switching an already managed pepper to existing mode plans deletion of the
-managed secret and its version, even if the supplied ARN names that same secret.**
-Stop if the plan proposes either deletion. First arrange a separately reviewed
-handoff that removes both pepper resources from this module's state without
-deleting them, and transfers ownership to the caller. This module does not
-perform that handoff. Upgrading while keeping generated mode uses moved
-addresses and must not replace the secret or rotate its version.
+An existing secret must live in the same AWS account and region as your provider,
+and its name must not start with `tenant-` or `registry-tenant-` — the
+control-plane pods can read and overwrite every secret under those two prefixes.
+Give its full ARN, including the six-character suffix. Its current value must be
+standard base64 of exactly 32 bytes. Terraform reads the secret's metadata,
+never its value. The Terraform identity needs `secretsmanager:DescribeSecret` on
+the ARN. If the secret uses a customer-managed KMS key, grant `kms:Decrypt` to
+`arn:aws:iam::<account>:role/<name_prefix>-external-secrets` before deploying —
+the module adds no [KMS grant](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html).
 
-For an upgrade, select the module and chart versions supplied by Pontem. The
-chart must support `awsTurnkey.deviceSecretPepperSecretName` and mount
-`DEVICE_SECRET_PEPPER` into the API through `DEVICE_SECRET_PEPPER_FILE`.
-Record both versions for each deployment; development and production may use
-different pins.
+**Pointing `existing_device_secret_pepper_secret_arn` at a pepper this module
+already manages plans deletion of that secret and its version.** Stop if the plan
+proposes either deletion. Handing the secret over means taking both resources out
+of this module's state without deleting them — a separate reviewed change this
+module does not perform.
 
-1. Run `terraform plan` and review it before applying. Adding the pepper creates
-   its secret and version and extends the ESO read policy. The database password
-   and signing key must not be replaced or rotated.
-2. After the approved apply, regenerate `values.yaml` and run the pinned Helm
-   command in Deploy step 4. Direct users of `modules/chart_values` must supply
-   `device_secret_pepper_secret_name`.
-3. Check that the ExternalSecret reports `SecretSynced`. Check each API replica
-   for `device secret pepper: configured` with a file source. Confirm an enrolled
-   device receives managed secrets; API health alone does not prove delivery.
+Deploy with the module and chart versions Pontem supplies. The chart finds the
+pepper through the Helm value `awsTurnkey.deviceSecretPepperSecretName`, which
+the generated `values.yaml` sets for you.
 
-To rotate a generated pepper, increase `device_secret_pepper_version` from its current value, review
-the plan, and apply. Leave the database and signing-key version inputs unchanged.
-Ordinary applies with the same version keep the existing pepper.
+1. Run `terraform plan`. Adding the pepper creates its secret and version and
+   extends the External Secrets read policy; the database password and signing
+   key must not be replaced or rotated.
+2. After the apply, regenerate `values.yaml` and run the pinned Helm command in
+   Deploy step 4. If you keep your own values file, set
+   `awsTurnkey.deviceSecretPepperSecretName` in it yourself; if you call
+   `modules/chart_values` directly, supply its `device_secret_pepper_secret_name`
+   input.
+3. Check that the ExternalSecret reports `SecretSynced`, each API replica reports
+   `device secret pepper: configured` with a file source, and an enrolled device
+   receives managed secrets — API health alone does not prove delivery.
 
-The chart syncs the source secret hourly. Allow for Kubernetes volume propagation
-and the API's 60-second pepper cache. With the mounted-file chart, API pods do not
-need restarting. Match the new fingerprint in the API's
-`device secret pepper rotated: <old> -> <new>` log with the device's
-`Adopted secret pepper <new>` log. Offline devices adopt it after reconnecting.
-See the chart's [pepper operations guide](https://github.com/pontemai/pontem-mvp/blob/develop/helm/pontem-control/docs/operations.md#device-secret-pepper)
-for cache recovery behavior.
+Rotating a generated pepper — raise `device_secret_pepper_version`, leaving the
+database and signing-key version inputs alone — reaches devices within about an
+hour, without restarting API pods. Match the API's
+`device secret pepper rotated: <old> -> <new>` log against the device's
+`Adopted secret pepper <new>`; offline devices adopt it after reconnecting. For
+how devices use the pepper and what a rotation re-encrypts, see Secrets → The
+pepper in the Pontem documentation for your deployment.
 
 ## Troubleshooting
 
