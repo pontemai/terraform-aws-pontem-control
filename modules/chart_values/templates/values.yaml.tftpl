@@ -57,8 +57,8 @@ credentials:
     name: pontem-control
 %{~ if distribution != null }
 
-# Per-tenant agent package sources. The registry row and its credentials must
-# already exist in the control plane before enabling a source here.
+# Per-tenant agent and CLI distribution sources. Each registry row and its
+# credentials must already exist in the control plane before it is named here.
 distribution:${indent(2, "\n${yamlencode(distribution)}")}%{~ endif }
 
 # How the API validates the bearer tokens it receives. Supplied as plain values
