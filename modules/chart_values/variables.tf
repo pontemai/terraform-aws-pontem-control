@@ -85,20 +85,27 @@ variable "wif_audience" {
 }
 
 variable "distribution" {
-  description = "Per-tenant agent distribution sources; omitted from chart values when unset. Registry rows must already exist in the control plane."
+  description = "Per-tenant agent and CLI distribution sources; omitted from chart values when unset. Registry rows must already exist in the control plane."
   type = object({
     tenants = map(object({
       agent = optional(object({
         registryId    = string
         allowFallback = optional(bool)
       }))
+      cli = optional(object({
+        registryId = string
+      }))
     }))
   })
   default = null
 
   validation {
-    condition     = alltrue([for config in values(try(var.distribution.tenants, {})) : config.agent == null ? true : try(length(config.agent.registryId) > 0, false)])
-    error_message = "Every configured distribution agent registryId must be non-empty."
+    condition = alltrue([
+      for config in values(try(var.distribution.tenants, {})) :
+      (config.agent == null ? true : try(length(config.agent.registryId) > 0, false))
+      && (config.cli == null ? true : try(length(config.cli.registryId) > 0, false))
+    ])
+    error_message = "Every configured distribution agent and cli registryId must be non-empty."
   }
 }
 

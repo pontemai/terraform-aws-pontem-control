@@ -238,12 +238,28 @@ run "distribution_is_rendered" {
           agent = {
             registryId = "acme-agent-mirror"
           }
+          cli = {
+            registryId = "acme-cli-mirror"
+          }
         }
         acme-data = {}
+        acme-edge = {
+          agent = {
+            registryId    = "acme-agent-mirror"
+            allowFallback = false
+          }
+        }
+        acme-ops = {
+          cli = {
+            registryId = "acme-cli-mirror"
+          }
+        }
       }
     }
   }
 
+  # Exact equality also proves that no unset section or attribute is rendered
+  # as null, which the chart's values schema would reject.
   assert {
     condition = try(yamldecode(output.helm_values).distribution == {
       tenants = {
@@ -251,12 +267,44 @@ run "distribution_is_rendered" {
           agent = {
             registryId = "acme-agent-mirror"
           }
+          cli = {
+            registryId = "acme-cli-mirror"
+          }
         }
         acme-data = {}
+        acme-edge = {
+          agent = {
+            registryId    = "acme-agent-mirror"
+            allowFallback = false
+          }
+        }
+        acme-ops = {
+          cli = {
+            registryId = "acme-cli-mirror"
+          }
+        }
       }
     }, false)
-    error_message = "distribution must render the configured per-tenant agent source."
+    error_message = "distribution must render each tenant's configured agent and cli sources and nothing else."
   }
+}
+
+run "distribution_rejects_empty_cli_registry_id" {
+  command = plan
+
+  variables {
+    distribution = {
+      tenants = {
+        acme = {
+          cli = {
+            registryId = ""
+          }
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.distribution]
 }
 
 run "distribution_rejects_empty_registry_id" {
