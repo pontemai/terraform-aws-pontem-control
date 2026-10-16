@@ -438,7 +438,7 @@ variable "wif_audience" {
 }
 
 variable "distribution" {
-  description = "Per-tenant distribution sources rendered into the chart values. agent.registryId selects the agent release mirror and allowFallback whether devices may still use the public source. cli.registryId selects the CLI release mirror, an object-storage registry whose bucket allow-list names exactly the mirror bucket; a configured CLI source never falls back. Registry rows and credentials must already exist in the control plane."
+  description = "Per-tenant distribution sources rendered into the chart values. agent.registryId selects the agent release mirror and allowFallback says whether devices may still use the public source. cli.registryId selects the CLI release mirror, an object-storage registry whose bucket allow-list names exactly the mirror bucket; a configured CLI source never falls back. Registry rows and credentials must already exist in the control plane."
   type = object({
     tenants = map(object({
       agent = optional(object({

@@ -307,6 +307,24 @@ run "distribution_rejects_empty_cli_registry_id" {
   expect_failures = [var.distribution]
 }
 
+run "distribution_rejects_null_cli_registry_id" {
+  command = plan
+
+  variables {
+    distribution = {
+      tenants = {
+        acme = {
+          cli = {
+            registryId = null
+          }
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.distribution]
+}
+
 run "distribution_rejects_empty_registry_id" {
   command = plan
 

@@ -20,14 +20,10 @@ output "helm_values" {
     db_port = var.db_port
     db_user = var.db_user
     # Unset sections and attributes are dropped rather than rendered as null,
-    # which the chart's values schema rejects. Tenants therefore differ in
-    # shape ({}, {agent}, {cli}, both); a list comprehension and zipmap keep
-    # them in one expression, where a map comprehension would need every
-    # tenant to share a type.
+    # which the chart's values schema rejects.
     distribution = var.distribution == null ? null : {
-      tenants = zipmap(
-        keys(var.distribution.tenants),
-        [for tenant, config in var.distribution.tenants : merge(
+      tenants = {
+        for tenant, config in var.distribution.tenants : tenant => merge(
           { for key, value in {
             agent = config.agent == null ? null : merge(
               { registryId = config.agent.registryId },
@@ -37,8 +33,8 @@ output "helm_values" {
           { for key, value in {
             cli = config.cli == null ? null : { registryId = config.cli.registryId }
           } : key => value if value != null },
-        )],
-      )
+        )
+      }
     }
     oidc_audience  = var.oidc_audience
     oidc_client_id = var.oidc_client_id
