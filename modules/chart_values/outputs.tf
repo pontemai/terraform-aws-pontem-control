@@ -19,18 +19,22 @@ output "helm_values" {
     db_name = var.db_name
     db_port = var.db_port
     db_user = var.db_user
+    # Unset sections and attributes are dropped rather than rendered as null,
+    # which the chart's values schema rejects.
     distribution = var.distribution == null ? null : {
-      tenants = merge(
-        {
-          for tenant, config in var.distribution.tenants : tenant => {
-            agent = merge(
+      tenants = {
+        for tenant, config in var.distribution.tenants : tenant => merge(
+          { for key, value in {
+            agent = config.agent == null ? null : merge(
               { registryId = config.agent.registryId },
-              { for key, value in { allowFallback = config.agent.allowFallback } : key => value if value != null },
+              { for k, v in { allowFallback = config.agent.allowFallback } : k => v if v != null },
             )
-          } if config.agent != null
-        },
-        { for tenant, config in var.distribution.tenants : tenant => {} if config.agent == null },
-      )
+          } : key => value if value != null },
+          { for key, value in {
+            cli = config.cli == null ? null : { registryId = config.cli.registryId }
+          } : key => value if value != null },
+        )
+      }
     }
     oidc_audience  = var.oidc_audience
     oidc_client_id = var.oidc_client_id
