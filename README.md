@@ -275,7 +275,7 @@ create both from the API pod:
 kubectl exec deploy/pontem-control-api \
   --namespace "$(terraform output -raw namespace)" \
   -c api -- \
-  uv run python -m pontem_control.scripts.bootstrap_tenant \
+  python -m pontem_control.scripts.bootstrap_tenant \
   --tenant-name "<organization-name>" \
   --slug "<organization-slug>" \
   --extra-admin "<admin-email>" \
