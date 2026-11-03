@@ -27,6 +27,10 @@ settings:
   hide-empty: true
   html: true
   indent: 2
+  # Show the provider constraint, not the version `terraform init` resolved:
+  # the lock file is gitignored, so a resolved version goes stale on every
+  # provider release and fails docs-check.
+  lockfile: false
   required: true
   sensitive: true
   type: true
