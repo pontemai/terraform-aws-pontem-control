@@ -34,6 +34,11 @@ run "values_satisfy_the_chart_contract" {
   command = plan
 
   assert {
+    condition     = try(yamldecode(output.helm_values).selfHosted == true, false)
+    error_message = "Customer-managed AWS installs must enable selfHosted so admins can opt into Workflows and Trusted Keys."
+  }
+
+  assert {
     condition     = yamldecode(output.helm_values).cloudProvider == "aws"
     error_message = "cloudProvider must be aws; the chart rejects secretsBackend.type=aws without it."
   }
@@ -218,7 +223,7 @@ run "values_satisfy_the_chart_contract" {
   # false at every level, so one stray top-level key fails the whole install.
   assert {
     condition = length(setsubtract(keys(yamldecode(output.helm_values)), [
-      "image", "version", "credentials", "cloudProvider", "aws", "gcp", "auth",
+      "image", "version", "credentials", "cloudProvider", "selfHosted", "aws", "gcp", "auth",
       "externalDatabase", "agentCatalog", "secretsBackend",
       "observability", "tracing", "managedSync", "devicePurge", "serviceAccount",
       "api", "worker", "mcp", "admin", "ingress", "awsTurnkey",
