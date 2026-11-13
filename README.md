@@ -262,6 +262,9 @@ helm upgrade --install pontem-control \
   --wait --timeout 10m
 ```
 
+Use a chart release that supports `selfHosted`. This module sets
+`selfHosted: true` in the generated Helm values.
+
 The chart version selects the matching control-plane and admin image tags.
 `--wait` covers controller and application workload readiness. ALB provisioning,
 DNS propagation, HTTP health, and browser sign-in complete afterward.
@@ -322,6 +325,12 @@ turn it on and list the packages to admit. Select **Save**, then **Sync now**.
 
 To connect the first device, open the in-product docs and follow **Tutorial:
 Onboard a Device**.
+
+### 8. Optional: Enable Workflows and Trusted Keys
+
+Open **Settings → Features** and turn on **Workflow** or **Trusted Keys** for
+your organization. Your account needs permission to manage tenant settings
+(`settings:write`); the Admin role includes it. Both features start disabled.
 
 ## Maintenance
 
