@@ -176,6 +176,17 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private[count.index].id
 }
 
+resource "aws_vpc_endpoint" "s3" {
+  count = local.create_vpc ? 1 : 0
+
+  vpc_id            = local.vpc_id
+  service_name      = "com.amazonaws.${local.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = aws_route_table.private[*].id
+
+  tags = local.tags
+}
+
 moved {
   from = aws_vpc.this
   to   = aws_vpc.this[0]

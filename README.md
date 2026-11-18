@@ -10,7 +10,8 @@ install below.
 ## What it creates
 
 - By default, a dedicated VPC with public and private subnets in two availability
-  zones. You can also supply an existing VPC and subnets.
+  zones, NAT egress, and an S3 gateway endpoint for every private subnet. You can
+  also supply an existing VPC and subnets.
 - An EKS Auto Mode cluster.
 - A private, Multi-AZ RDS Postgres instance.
 - Secrets Manager secrets for the database password, device JWT signing key, and device secret pepper.
@@ -160,6 +161,61 @@ Your network must provide:
   tags; supplying subnet IDs does not add them.
 
 Existing-VPC deployments require a chart version supporting `awsTurnkey.subnetIds`.
+
+### S3 routing and transfer costs
+
+In a managed VPC, same-region S3 traffic from every private subnet uses the S3
+gateway endpoint in both NAT modes. NAT default routes remain for other traffic.
+The endpoint uses AWS's default Full Access policy; IAM and bucket policies still
+control authorization. It adds no bucket allowlist that could exclude AWS-owned
+[ECR layer buckets](https://docs.aws.amazon.com/AmazonECR/latest/userguide/vpc-endpoints.html).
+ECR API and manifest requests still need NAT or separately managed ECR interface
+endpoints. No hostname, certificate, or chart update is needed for this routing.
+
+For an existing VPC, you own the endpoint and its associations. To bypass NAT,
+associate a same-region S3 gateway endpoint with every route table serving the
+supplied private subnets. Its policy must permit the required artifact operations
+and `s3:GetObject` on `arn:aws:s3:::prod-<region>-starport-layer-bucket/*` for ECR.
+DNS must resolve regional S3 names correctly; security groups must allow HTTPS
+to S3, and network ACLs must allow requests and return traffic. See
+[S3 gateway prerequisites](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html).
+
+[Gateway endpoints have no hourly or processing charge](https://aws.amazon.com/vpc/pricing/).
+Cross-region S3 traffic does not use this endpoint and can still incur NAT
+processing and regional data-transfer charges; NAT hourly charges also remain.
+For traffic served through an ALB, the
+[US East (N. Virginia) pricing example](https://aws.amazon.com/elasticloadbalancing/pricing/)
+is approximately **$0.008 per GB processed** when bytes dominate the LCU dimensions
+and targets are EC2 instances, containers, or IP addresses (1 GB/hour per LCU at
+$0.008/LCU-hour). This excludes the ALB hourly charge, data transfer, and any extra
+ALB hop. Other LCU dimensions or regional prices can change the bill.
+
+### Upgrade or roll back S3 routing
+
+Before upgrading a managed VPC, check bucket and identity policies that depend on
+the NAT public IP (`aws:SourceIp`). Endpoint requests use private source addresses;
+preserve the intended access with endpoint-compatible conditions such as
+`aws:SourceVpce` or `aws:VpcSourceIp`, while retaining the NAT path for recovery.
+Route changes disconnect existing S3 TCP sessions, so drain critical transfers
+or verify reconnect/retry behavior before changing associations.
+
+Validate the upgrade in a controlled test installation:
+
+1. Record the module/provider versions, private route tables, and successful
+   artifact downloads, uncached ECR image pulls, and non-S3 egress on the old version.
+2. Pin the new module revision and inspect `terraform plan`. For this change alone,
+   expect one S3 endpoint associated with all private route tables, with no VPC,
+   subnet, workload replacement, or NAT default-route removal. A supplied-VPC
+   installation should have no networking changes. Stop on unexpected changes.
+3. Apply the reviewed plan. Verify each private table's regional S3 prefix-list
+   route targets the endpoint and its default route still targets NAT. Repeat
+   the downloads, uncached pulls, and non-S3 checks; record any interrupted
+   transfers and successful retries.
+4. For rollback, pin the previous module revision, review the plan to remove
+   only the endpoint and its associations, then apply. Repeat the route and
+   access checks through NAT, allowing for the same connection interruption.
+
+Keep deployment on hold if policy compatibility or recovery cannot be demonstrated.
 
 ## Deploy
 
@@ -580,6 +636,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | [aws_subnet.private](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet) | resource |
 | [aws_subnet.public](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet) | resource |
 | [aws_vpc.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc) | resource |
+| [aws_vpc_endpoint.s3](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_endpoint) | resource |
 | [aws_availability_zones.available](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
 | [aws_availability_zones.existing](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
@@ -633,7 +690,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | public\_subnet\_ids | Existing ALB public subnets: one per AZ, in at least two standard AZs in vpc\_id. Required for an internet-facing ALB with vpc\_id; otherwise must be empty. | `list(string)` | `[]` | no |
 | route53\_zone\_id | ID of an existing Route53 hosted zone for app\_domain\_name. Set this or create\_route53\_zone to automate ACM validation and application DNS. Leave both unset to create the returned acm\_validation\_records yourself. | `string` | `null` | no |
 | secret\_recovery\_window\_days | Days a deleted secret stays recoverable. AWS keeps the deleted secret's NAME reserved for this long and rejects re-creating it, so `terraform destroy` followed by a fresh apply fails with "already scheduled for deletion" until the window expires. 0 deletes immediately, which makes repeated build-and-tear-down cycles work. | `number` | `30` | no |
-| single\_nat\_gateway | Managed-VPC setting, ignored when vpc\_id is set. Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
+| single\_nat\_gateway | Managed-VPC setting, ignored when vpc\_id is set. Route private-subnet NAT egress through one gateway instead of one per AZ; same-region S3 traffic uses the gateway endpoint. True saves roughly $33/month per AZ dropped, and makes NAT egress from every AZ depend on the one NAT gateway's AZ staying up. | `bool` | `false` | no |
 | tags | Extra tags merged onto every resource this module creates, on top of its own Project/ManagedBy tags. | `map(string)` | `{}` | no |
 | vpc\_cidr | CIDR block for the dedicated VPC; ignored when vpc\_id is set. It is carved into one public and one private subnet per availability zone, each four bits narrower than this block — /20 subnets out of the default /16. CHANGING THIS REPLACES THE VPC and everything inside it, including the cluster and the database. | `string` | `"10.0.0.0/16"` | no |
 | vpc\_id | Existing VPC to use without managing its networking. Null creates a dedicated VPC. Changing an existing deployment's VPC is not an in-place migration. | `string` | `null` | no |

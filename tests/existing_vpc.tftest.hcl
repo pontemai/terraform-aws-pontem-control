@@ -69,6 +69,7 @@ run "supplied_vpc_leaves_network_ownership_with_customer" {
   assert {
     condition = alltrue([
       length(aws_vpc.this) == 0,
+      length(aws_vpc_endpoint.s3) == 0,
       length(aws_default_security_group.this) == 0,
       length(aws_internet_gateway.this) == 0,
       length(aws_subnet.private) == 0,
