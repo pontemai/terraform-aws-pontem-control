@@ -109,6 +109,13 @@ variable "distribution" {
   }
 }
 
+variable "enable_registry_proxy" {
+  description = "Render downloadProxy.enabled and downloadProxy.registry.enabled; omitted from chart values when false."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "alb_scheme" {
   description = "ALB scheme rendered as awsTurnkey.scheme."
   type        = string

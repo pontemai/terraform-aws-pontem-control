@@ -61,6 +61,14 @@ credentials:
 # Per-tenant agent and CLI distribution sources. Each registry row and its
 # credentials must already exist in the control plane before it is named here.
 distribution:${indent(2, "\n${yamlencode(distribution)}")}%{~ endif }
+%{~ if enable_registry_proxy }
+
+# Serves private ECR images to devices under this hostname's /v2/pontem/ path.
+downloadProxy:
+  enabled: true
+  registry:
+    enabled: true
+%{~ endif }
 
 # How the API validates the bearer tokens it receives. Supplied as plain values
 # because none of this is secret.
