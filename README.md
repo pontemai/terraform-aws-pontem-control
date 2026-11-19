@@ -474,21 +474,21 @@ turning it on may stop being enforced.
 
 ### Keep the ALB idle timeout at 60 seconds
 
-The API, the admin UI, device connections and registry-proxy image pulls all go
-through one ALB, and its idle timeout applies to all of them. Leave it at 60
+The API, the admin UI, device connections, and registry-proxy image pulls all
+go through one ALB, and its idle timeout applies to all of them. Leave it at 60
 seconds, the AWS default. The module and chart do not set it and have no input
 for it, so there is nothing to configure, with or without the registry proxy.
 
 The idle timeout counts silence on a connection, not how long a transfer takes.
-In Pontem's test, a device on a 2 Mbit/s link pulled a 126 MB image layer through
-the registry proxy in nine minutes on one connection, with no silence longer
-than half a second. A slow link does not need a longer timeout.
+In Pontem's test, a device on a 2 Mbit/s link pulled a 126 MB image layer
+through the registry proxy in nine minutes on one connection, with no silence
+longer than half a second. A slow link does not need a longer timeout.
 
-A pull is cut when no data moves for the whole timeout, for example during a
-network outage, or when the proxy pod is replaced. The device then reconnects,
-continues from the byte it had reached and checks the image digest, so the pull
-finishes without starting over. A test pull that lost its network for 20 and
-then 90 seconds finished this way.
+A pull is cut when a connection is silent for about a minute, for example
+during or after a network outage, or when the proxy pod is replaced. The device
+then reconnects, continues from the byte it had reached, and checks the image
+digest, so the pull finishes without starting over. A test pull that lost its
+network for 20 and then 90 seconds finished this way.
 
 Other values were tested and are no better:
 
@@ -496,9 +496,11 @@ Other values were tested and are no better:
   ALB closed a download that had paused for 45 seconds; at 60 seconds the same
   pause passed. Device connections are also silent for up to 30 seconds between
   heartbeats.
-- **Above 60 seconds** gains nothing. The registry proxy itself stops sending to
-  a client that has accepted no data for 60 seconds. With the ALB at 120
-  seconds, a 75-second pause was still cut after 60.
+- **Above 60 seconds** does not help a device that stops receiving. The
+  registry proxy itself stops sending to a client that has accepted no data for
+  60 seconds. With the ALB at 120 seconds, a 75-second pause was still cut
+  after 60. Above 75 seconds, the proxy closes idle connections before the ALB
+  does, which AWS says can cause 502 errors.
 
 Check the value on the ALB behind the Ingress:
 
@@ -519,14 +521,19 @@ aws elbv2 modify-load-balancer-attributes --load-balancer-arn "$ALB_ARN" \
   --attributes Key=idle_timeout.timeout_seconds,Value=60
 ```
 
-This changes only that attribute; listeners, rules, target groups and sign-in
+This changes only that attribute; listeners, rules, target groups, and sign-in
 are untouched. New connections pick up the value within about a minute. Run the
 check again to confirm it.
 
+If the value does not stay at 60, something in the cluster is setting it. Look
+for `idle_timeout.timeout_seconds` in the output of
+`kubectl get ingressclassparams alb --output yaml`.
+
 If devices reach the control plane through an ALB you manage yourself, the same
 rule applies. Keep its idle timeout at 60 seconds in the tool that manages it,
-for example `idle_timeout = 60` on a Terraform `aws_lb`, and check it with the
-last command above.
+for example `idle_timeout = 60` on a Terraform `aws_lb`. To check it, run the
+`describe-load-balancer-attributes` command above with `ALB_ARN` set to that
+ALB's ARN.
 
 ## Troubleshooting
 
@@ -563,6 +570,8 @@ carries no data for 60 seconds is closed, and the pull resumes where it stopped.
 If this happens on a healthy link, check that the ALB idle timeout is still 60
 seconds; see
 [Keep the ALB idle timeout at 60 seconds](#keep-the-alb-idle-timeout-at-60-seconds).
+If it is, check the age of the `pontem-control-download-proxy` pod with
+`kubectl get pods`; replacing that pod also cuts pulls in progress.
 
 ## Remove the deployment
 
