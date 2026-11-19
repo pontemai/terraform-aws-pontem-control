@@ -468,7 +468,9 @@ Pontem.
    publishing package versions that use them.
 
 To turn it off, set `enable_registry_proxy = false` and upgrade the same way.
-Devices can then no longer pull images from proxied registries.
+Devices can then no longer pull images from proxied registries. Helm also
+deletes the `amazon-vpc-cni` ConfigMap, so any NetworkPolicy you added since
+turning it on may stop being enforced.
 
 ## Troubleshooting
 

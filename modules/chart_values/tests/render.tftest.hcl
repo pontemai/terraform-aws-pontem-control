@@ -299,11 +299,22 @@ run "distribution_is_rendered" {
   }
 }
 
+# distribution is set too: its block ends right where downloadProxy starts, so
+# this is the run that catches a whitespace slip gluing the two together.
 run "registry_proxy_is_rendered" {
   command = plan
 
   variables {
     enable_registry_proxy = true
+    distribution = {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = "acme-agent-mirror"
+          }
+        }
+      }
+    }
   }
 
   assert {
@@ -314,6 +325,19 @@ run "registry_proxy_is_rendered" {
       }
     }, false)
     error_message = "downloadProxy must enable the proxy and its registry routes, and nothing else."
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values).distribution == {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = "acme-agent-mirror"
+          }
+        }
+      }
+    }, false)
+    error_message = "distribution must render unchanged next to downloadProxy."
   }
 }
 
