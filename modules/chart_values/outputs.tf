@@ -19,6 +19,9 @@ output "helm_values" {
     db_name = var.db_name
     db_port = var.db_port
     db_user = var.db_user
+
+    enable_registry_proxy = var.enable_registry_proxy
+
     # Unset sections and attributes are dropped rather than rendered as null,
     # which the chart's values schema rejects.
     distribution = var.distribution == null ? null : {

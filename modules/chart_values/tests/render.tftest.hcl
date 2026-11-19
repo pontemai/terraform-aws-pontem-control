@@ -219,6 +219,11 @@ run "values_satisfy_the_chart_contract" {
     error_message = "distribution must be omitted when unset so existing rendered values stay unchanged."
   }
 
+  assert {
+    condition     = !contains(keys(yamldecode(output.helm_values)), "downloadProxy")
+    error_message = "downloadProxy must be omitted when the registry proxy is off so existing rendered values stay unchanged."
+  }
+
   # No key the chart's schema does not define: it sets additionalProperties
   # false at every level, so one stray top-level key fails the whole install.
   assert {
@@ -291,6 +296,48 @@ run "distribution_is_rendered" {
       }
     }, false)
     error_message = "distribution must render each tenant's configured agent and cli sources and nothing else."
+  }
+}
+
+# distribution is set too: its block ends right where downloadProxy starts, so
+# this is the run that catches a whitespace slip gluing the two together.
+run "registry_proxy_is_rendered" {
+  command = plan
+
+  variables {
+    enable_registry_proxy = true
+    distribution = {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = "acme-agent-mirror"
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values).downloadProxy == {
+      enabled = true
+      registry = {
+        enabled = true
+      }
+    }, false)
+    error_message = "downloadProxy must enable the proxy and its registry routes, and nothing else."
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values).distribution == {
+      tenants = {
+        acme = {
+          agent = {
+            registryId = "acme-agent-mirror"
+          }
+        }
+      }
+    }, false)
+    error_message = "distribution must render unchanged next to downloadProxy."
   }
 }
 

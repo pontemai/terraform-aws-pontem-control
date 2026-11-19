@@ -59,8 +59,12 @@ jobs:
       - name: Validate
         run: make validate
 
+      # tflint --init downloads the aws ruleset through the GitHub API. Without a
+      # token it shares the runner IP's 60-requests-an-hour limit and fails at random.
       - name: Lint
         run: make lint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       # Fails if the generated input/output tables in the READMEs are stale. Those
       # tables are where a customer reads what each input does, so a missing one

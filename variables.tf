@@ -453,6 +453,13 @@ variable "distribution" {
   default = null
 }
 
+variable "enable_registry_proxy" {
+  description = "Let devices pull private ECR images through app_domain_name. Turns on NetworkPolicy enforcement for the whole cluster. Read the README section \"Turn on the registry proxy\" before enabling."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "oidc_client_id" {
   description = "Client ID of the public single-page-app client the admin UI signs in with. Used only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy."
   type        = string
