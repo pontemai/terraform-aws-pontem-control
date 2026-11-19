@@ -433,6 +433,42 @@ hour, without restarting API pods. Match the API's
 how devices use the pepper and what a rotation re-encrypts, see Secrets → The
 pepper in the Pontem documentation for your deployment.
 
+### Turn on the registry proxy
+
+The registry proxy lets devices pull private ECR images through
+`app_domain_name` instead of reaching ECR directly.
+
+It needs a pontem-control chart release newer than `v0.34.0`. With `v0.34.0` or
+older, the Helm upgrade fails the chart's values-schema check and changes
+nothing.
+
+Turning it on adds two things to the cluster:
+
+- `/v2/` and `/v2/pontem/` routes on `app_domain_name`, served by a new proxy
+  deployment.
+- The `amazon-vpc-cni` ConfigMap in `kube-system`. It turns on NetworkPolicy
+  enforcement for the whole EKS Auto Mode cluster, so any NetworkPolicy already
+  in the cluster starts being enforced.
+
+Before you turn it on, check whether that ConfigMap already exists:
+
+```bash
+kubectl get configmap amazon-vpc-cni -n kube-system
+```
+
+If it exists, the upgrade fails because Helm will not take over a ConfigMap it
+did not create, and the release is unchanged. Leave the input off and contact
+Pontem.
+
+1. Set `enable_registry_proxy = true` and run `terraform apply`.
+2. Regenerate `values.yaml` and run the pinned Helm command in Deploy step 4,
+   with a chart release newer than `v0.34.0`.
+3. After the upgrade finishes, create the proxied registries. Do this before
+   publishing package versions that use them.
+
+To turn it off, set `enable_registry_proxy = false` and upgrade the same way;
+devices then stop pulling through proxied registries.
+
 ## Troubleshooting
 
 **The ExternalSecret does not report `SecretSynced`.** Confirm the release uses
@@ -623,6 +659,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | device\_jwt\_signing\_key\_version | Version of the generated device JWT signing key. Raising this value invalidates every enrolled device's JWT. | `number` | `1` | no |
 | device\_secret\_pepper\_version | Version of the generated device secret pepper. Increase only for deliberate rotation; running devices re-key their caches after receiving the new pepper. | `number` | `1` | no |
 | distribution | Per-tenant distribution sources rendered into the chart values. agent.registryId selects the agent release mirror and allowFallback says whether devices may still use the public source. cli.registryId selects the CLI release mirror, an object-storage registry whose bucket allow-list names exactly the mirror bucket; a configured CLI source never falls back. Registry rows and credentials must already exist in the control plane. | <pre>object({<br/>    tenants = map(object({<br/>      agent = optional(object({<br/>        registryId    = string<br/>        allowFallback = optional(bool)<br/>      }))<br/>      cli = optional(object({<br/>        registryId = string<br/>      }))<br/>    }))<br/>  })</pre> | `null` | no |
+| enable\_registry\_proxy | Let devices pull private ECR images through app\_domain\_name. Read the README section "Turn on the registry proxy" before enabling. | `bool` | `false` | no |
 | enable\_vpc\_flow\_logs | Capture managed-VPC traffic metadata in CloudWatch. Ignored when vpc\_id is set; existing VPC logging stays customer-managed. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
 | existing\_device\_secret\_pepper\_secret\_arn | Full ARN of an existing device pepper secret in the provider's account and region. Null generates a pepper. The caller owns its value (standard base64 of 32 bytes), rotation, and any customer-managed KMS decryption grant for the ESO role. See the README before switching a generated pepper to existing mode. | `string` | `null` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
