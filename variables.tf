@@ -454,7 +454,7 @@ variable "distribution" {
 }
 
 variable "enable_registry_proxy" {
-  description = "Let devices pull private ECR images through app_domain_name. Read the README section \"Turn on the registry proxy\" before enabling."
+  description = "Let devices pull private ECR images through app_domain_name. Turns on NetworkPolicy enforcement for the whole cluster. Read the README section \"Turn on the registry proxy\" before enabling."
   type        = bool
   default     = false
   nullable    = false

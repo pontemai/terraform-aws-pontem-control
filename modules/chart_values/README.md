@@ -15,6 +15,7 @@ comments.
 `helm_values` sets `awsTurnkey.enabled: true` and
 `external-secrets.enabled: true`.
 `externalDns.enabled` follows `route53_zone_id`.
+`downloadProxy` is rendered only when `enable_registry_proxy` is true.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements

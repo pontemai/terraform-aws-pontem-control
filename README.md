@@ -25,7 +25,8 @@ install below.
 The Helm release installs External Secrets Operator, creates the application
 Secret from the three Secrets Manager secrets, and creates the `alb` IngressClass.
 When either Route53 option is set, it also installs ExternalDNS for the
-application hostname.
+application hostname. With `enable_registry_proxy`, it also runs the registry
+proxy; see [Turn on the registry proxy](#turn-on-the-registry-proxy).
 
 ## Limits
 
@@ -466,8 +467,8 @@ Pontem.
 3. After the upgrade finishes, create the proxied registries. Do this before
    publishing package versions that use them.
 
-To turn it off, set `enable_registry_proxy = false` and upgrade the same way;
-devices then stop pulling through proxied registries.
+To turn it off, set `enable_registry_proxy = false` and upgrade the same way.
+Devices can then no longer pull images from proxied registries.
 
 ## Troubleshooting
 
@@ -659,7 +660,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | device\_jwt\_signing\_key\_version | Version of the generated device JWT signing key. Raising this value invalidates every enrolled device's JWT. | `number` | `1` | no |
 | device\_secret\_pepper\_version | Version of the generated device secret pepper. Increase only for deliberate rotation; running devices re-key their caches after receiving the new pepper. | `number` | `1` | no |
 | distribution | Per-tenant distribution sources rendered into the chart values. agent.registryId selects the agent release mirror and allowFallback says whether devices may still use the public source. cli.registryId selects the CLI release mirror, an object-storage registry whose bucket allow-list names exactly the mirror bucket; a configured CLI source never falls back. Registry rows and credentials must already exist in the control plane. | <pre>object({<br/>    tenants = map(object({<br/>      agent = optional(object({<br/>        registryId    = string<br/>        allowFallback = optional(bool)<br/>      }))<br/>      cli = optional(object({<br/>        registryId = string<br/>      }))<br/>    }))<br/>  })</pre> | `null` | no |
-| enable\_registry\_proxy | Let devices pull private ECR images through app\_domain\_name. Read the README section "Turn on the registry proxy" before enabling. | `bool` | `false` | no |
+| enable\_registry\_proxy | Let devices pull private ECR images through app\_domain\_name. Turns on NetworkPolicy enforcement for the whole cluster. Read the README section "Turn on the registry proxy" before enabling. | `bool` | `false` | no |
 | enable\_vpc\_flow\_logs | Capture managed-VPC traffic metadata in CloudWatch. Ignored when vpc\_id is set; existing VPC logging stays customer-managed. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
 | existing\_device\_secret\_pepper\_secret\_arn | Full ARN of an existing device pepper secret in the provider's account and region. Null generates a pepper. The caller owns its value (standard base64 of 32 bytes), rotation, and any customer-managed KMS decryption grant for the ESO role. See the README before switching a generated pepper to existing mode. | `string` | `null` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
