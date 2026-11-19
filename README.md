@@ -472,6 +472,62 @@ Devices can then no longer pull images from proxied registries. Helm also
 deletes the `amazon-vpc-cni` ConfigMap, so any NetworkPolicy you added since
 turning it on may stop being enforced.
 
+### Keep the ALB idle timeout at 60 seconds
+
+The API, the admin UI, device connections and registry-proxy image pulls all go
+through one ALB, and its idle timeout applies to all of them. Leave it at 60
+seconds, the AWS default. The module and chart do not set it and have no input
+for it, so there is nothing to configure, with or without the registry proxy.
+
+The idle timeout counts silence on a connection, not how long a transfer takes.
+In Pontem's test, a device on a 2 Mbit/s link pulled a 126 MB image layer through
+the registry proxy in nine minutes on one connection, with no silence longer
+than half a second. A slow link does not need a longer timeout.
+
+A pull is cut when no data moves for the whole timeout, for example during a
+network outage, or when the proxy pod is replaced. The device then reconnects,
+continues from the byte it had reached and checks the image digest, so the pull
+finishes without starting over. A test pull that lost its network for 20 and
+then 90 seconds finished this way.
+
+Other values were tested and are no better:
+
+- **Below 60 seconds** cuts stalls that would otherwise pass. At 30 seconds the
+  ALB closed a download that had paused for 45 seconds; at 60 seconds the same
+  pause passed. Device connections are also silent for up to 30 seconds between
+  heartbeats.
+- **Above 60 seconds** gains nothing. The registry proxy itself stops sending to
+  a client that has accepted no data for 60 seconds. With the ALB at 120
+  seconds, a 75-second pause was still cut after 60.
+
+Check the value on the ALB behind the Ingress:
+
+```bash
+ALB_DNS="$(kubectl get ingress pontem-control \
+  --namespace "$(terraform output -raw namespace)" \
+  --output jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+ALB_ARN="$(aws elbv2 describe-load-balancers \
+  --query "LoadBalancers[?DNSName=='$ALB_DNS'].LoadBalancerArn" --output text)"
+aws elbv2 describe-load-balancer-attributes --load-balancer-arn "$ALB_ARN" \
+  --query "Attributes[?Key=='idle_timeout.timeout_seconds'].Value" --output text
+```
+
+It should print `60`. If someone has changed it, set it back:
+
+```bash
+aws elbv2 modify-load-balancer-attributes --load-balancer-arn "$ALB_ARN" \
+  --attributes Key=idle_timeout.timeout_seconds,Value=60
+```
+
+This changes only that attribute; listeners, rules, target groups and sign-in
+are untouched. New connections pick up the value within about a minute. Run the
+check again to confirm it.
+
+If devices reach the control plane through an ALB you manage yourself, the same
+rule applies. Keep its idle timeout at 60 seconds in the tool that manages it,
+for example `idle_timeout = 60` on a Terraform `aws_lb`, and check it with the
+last command above.
+
 ## Troubleshooting
 
 **The ExternalSecret does not report `SecretSynced`.** Confirm the release uses
@@ -501,6 +557,12 @@ ServiceAccounts named `api` and `worker`.
 
 **Pods cannot reach the database.** The database admits connections only from the
 EKS cluster security group.
+
+**Image pulls through the registry proxy keep reconnecting.** A connection that
+carries no data for 60 seconds is closed, and the pull resumes where it stopped.
+If this happens on a healthy link, check that the ALB idle timeout is still 60
+seconds; see
+[Keep the ALB idle timeout at 60 seconds](#keep-the-alb-idle-timeout-at-60-seconds).
 
 ## Remove the deployment
 
