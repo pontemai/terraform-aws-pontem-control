@@ -160,7 +160,7 @@ variable "availability_zone_count" {
 }
 
 variable "single_nat_gateway" {
-  description = "Managed-VPC setting, ignored when vpc_id is set. Route all private-subnet egress through one NAT gateway instead of one per AZ. True saves roughly $33/month per AZ dropped, and makes outbound traffic from every AZ depend on the one NAT gateway's AZ staying up."
+  description = "Managed-VPC setting, ignored when vpc_id is set. Route private-subnet NAT egress through one gateway instead of one per AZ; same-region S3 traffic uses the gateway endpoint. True saves roughly $33/month per AZ dropped, and makes NAT egress from every AZ depend on the one NAT gateway's AZ staying up."
   type        = bool
   default     = false
 }

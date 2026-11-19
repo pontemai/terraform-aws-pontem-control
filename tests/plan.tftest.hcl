@@ -37,6 +37,62 @@ override_resource {
   }
 }
 
+override_resource {
+  target          = aws_vpc.this[0]
+  override_during = plan
+  values = {
+    id = "vpc-00000000000000001"
+  }
+}
+
+override_resource {
+  target          = aws_route_table.private[0]
+  override_during = plan
+  values = {
+    id = "rtb-00000000000000001"
+  }
+}
+
+override_resource {
+  target          = aws_route_table.private[1]
+  override_during = plan
+  values = {
+    id = "rtb-00000000000000002"
+  }
+}
+
+override_resource {
+  target          = aws_route_table.private[2]
+  override_during = plan
+  values = {
+    id = "rtb-00000000000000003"
+  }
+}
+
+override_resource {
+  target          = aws_nat_gateway.this[0]
+  override_during = plan
+  values = {
+    id = "nat-00000000000000001"
+  }
+}
+
+override_resource {
+  target          = aws_nat_gateway.this[1]
+  override_during = plan
+  values = {
+    id = "nat-00000000000000002"
+  }
+}
+
+override_resource {
+  target          = aws_nat_gateway.this[2]
+  override_during = plan
+  values = {
+    id = "nat-00000000000000003"
+  }
+}
+
 run "default_configuration" {
   command = plan
 
@@ -181,6 +237,29 @@ run "default_configuration" {
   assert {
     condition     = length(aws_route_table.private) == 2 && length(aws_route_table_association.private) == 2
     error_message = "There must be one private route table per AZ, each associated with that AZ's subnet."
+  }
+
+  assert {
+    condition = (
+      length(aws_vpc_endpoint.s3) == 1 &&
+      aws_vpc_endpoint.s3[0].vpc_id == aws_vpc.this[0].id &&
+      aws_vpc_endpoint.s3[0].vpc_endpoint_type == "Gateway" &&
+      aws_vpc_endpoint.s3[0].service_name == "com.amazonaws.us-east-1.s3" &&
+      aws_vpc_endpoint.s3[0].tags == tomap(local.tags)
+    )
+    error_message = "Managed networking must create one tagged S3 gateway endpoint in its own VPC and region."
+  }
+
+  assert {
+    condition     = aws_vpc_endpoint.s3[0].route_table_ids == toset(["rtb-00000000000000001", "rtb-00000000000000002"])
+    error_message = "The S3 endpoint must associate every private route table and no public route table."
+  }
+
+  assert {
+    condition = alltrue([for i, table in aws_route_table.private :
+      length(table.route) == 1 && one(table.route).cidr_block == "0.0.0.0/0" && one(table.route).nat_gateway_id == aws_nat_gateway.this[i].id
+    ])
+    error_message = "Each AZ must retain its default NAT route for non-S3 egress."
   }
 
   # ----- The Pod Identity contract -----
@@ -388,6 +467,23 @@ run "default_configuration" {
   }
 }
 
+run "s3_gateway_follows_provider_region" {
+  command = plan
+
+  override_data {
+    target = data.aws_region.current
+    values = {
+      name   = "us-west-2"
+      region = "us-west-2"
+    }
+  }
+
+  assert {
+    condition     = aws_vpc_endpoint.s3[0].service_name == "com.amazonaws.us-west-2.s3"
+    error_message = "The S3 service must follow the provider region rather than a fixed region."
+  }
+}
+
 run "vpc_flow_logs_can_be_disabled" {
   command = plan
 
@@ -423,6 +519,18 @@ run "single_nat_gateway_still_routes_every_az" {
     condition     = length(aws_route_table.private) == 2 && length(aws_route_table_association.private) == 2
     error_message = "Every AZ must keep its own private route table and association even when sharing one NAT gateway."
   }
+
+  assert {
+    condition     = length(aws_vpc_endpoint.s3) == 1 && aws_vpc_endpoint.s3[0].route_table_ids == toset(["rtb-00000000000000001", "rtb-00000000000000002"])
+    error_message = "Sharing a NAT gateway must still associate both private route tables with the S3 endpoint."
+  }
+
+  assert {
+    condition = alltrue([for table in aws_route_table.private :
+      length(table.route) == 1 && one(table.route).cidr_block == "0.0.0.0/0" && one(table.route).nat_gateway_id == aws_nat_gateway.this[0].id
+    ])
+    error_message = "Every AZ must retain its default route through the shared NAT gateway."
+  }
 }
 
 run "three_availability_zones" {
@@ -450,6 +558,11 @@ run "three_availability_zones" {
   assert {
     condition     = aws_subnet.private[2].availability_zone == "us-east-1c"
     error_message = "A third private subnet must land in the third AZ, which is what lets the RDS subnet group span three."
+  }
+
+  assert {
+    condition     = aws_vpc_endpoint.s3[0].route_table_ids == toset(["rtb-00000000000000001", "rtb-00000000000000002", "rtb-00000000000000003"])
+    error_message = "Adding an AZ must associate its private route table with the S3 endpoint."
   }
 }
 
