@@ -72,7 +72,7 @@ downloadProxy:
 %{~ if enable_telemetry_relay }
 
 # Accepts device logs at this hostname's /pontem/telemetry/v1/logs path and
-# writes them to observability.aws.logGroup under the device's identity.
+# writes each batch to that device's own stream in observability.aws.logGroup.
 telemetryRelay:
   enabled: true
 %{~ endif }

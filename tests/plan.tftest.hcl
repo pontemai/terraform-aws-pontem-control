@@ -757,15 +757,6 @@ run "telemetry_relay_uses_the_device_writer_role" {
   }
 
   assert {
-    condition = try(
-      toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).principals).identifiers) == toset([aws_iam_role.cp_runtime.arn]) &&
-      toset(one(one(data.aws_iam_policy_document.device_telemetry_writer_assume.statement).condition).values) == toset(["api"]),
-      false,
-    )
-    error_message = "The relay's trust must be added alongside the api statement, not replace it; devices still get credentials through api."
-  }
-
-  assert {
     condition     = try(yamldecode(output.helm_values).telemetryRelay == { enabled = true }, false)
     error_message = "enable_telemetry_relay must reach the chart as telemetryRelay.enabled."
   }

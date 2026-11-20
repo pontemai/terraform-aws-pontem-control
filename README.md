@@ -536,8 +536,9 @@ turning it on may stop being enforced.
 
 The telemetry relay accepts device logs at
 `https://<app_domain_name>/pontem/telemetry/v1/logs` and writes them to the
-device log group. Turning it on does not change where devices send logs. A
-device uses the relay only once its log collector is set up to.
+device log group. Turning it on does not change where devices send logs:
+devices keep sending them straight to CloudWatch until their log collector is
+configured to use the relay.
 
 It needs a pontem-control chart release newer than `v0.37.0`. With `v0.37.0` or
 older, the Helm upgrade fails the chart's values-schema check and changes

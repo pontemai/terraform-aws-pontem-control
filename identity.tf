@@ -218,8 +218,8 @@ resource "aws_iam_role_policy" "device_telemetry_writer" {
   policy = data.aws_iam_policy_document.device_telemetry_writer.json
 }
 
-# The relay holds what device credentials already hold, not cp_runtime, whose
-# tenant-secret access has no ServiceAccount condition.
+# The relay uses the writer role, which holds only what device credentials already
+# hold; cp_runtime's tenant-secret access has no ServiceAccount condition.
 resource "aws_eks_pod_identity_association" "telemetry_relay" {
   count = var.enable_telemetry_relay ? 1 : 0
 
