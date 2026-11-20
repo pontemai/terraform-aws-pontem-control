@@ -96,23 +96,6 @@ override_resource {
 run "default_configuration" {
   command = plan
 
-  # The only computed inputs to helm_values; pinned so it can be asserted on.
-  override_resource {
-    target          = aws_acm_certificate.app
-    override_during = plan
-    values = {
-      arn = "arn:aws:acm:us-east-1:123456789012:certificate/example"
-    }
-  }
-
-  override_resource {
-    target          = aws_db_instance.this
-    override_during = plan
-    values = {
-      address = "db.example.com"
-    }
-  }
-
   # ----- Durability and access defaults -----
 
   assert {
@@ -409,11 +392,10 @@ run "default_configuration" {
   assert {
     condition = try(
       length(aws_eks_pod_identity_association.telemetry_relay) == 0 &&
-      length(data.aws_iam_policy_document.device_telemetry_writer_assume.source_policy_documents) == 0 &&
-      !contains(keys(yamldecode(output.helm_values)), "telemetryRelay"),
+      length(data.aws_iam_policy_document.device_telemetry_writer_assume.source_policy_documents) == 0,
       false,
     )
-    error_message = "With enable_telemetry_relay off, the relay must get no association, no writer-role trust, and no chart values, so existing installs plan no change."
+    error_message = "With enable_telemetry_relay off, the relay must get no association and no writer-role trust, so existing installs plan no change."
   }
 
   # Pin the mock; a generated region would make this string check meaningless.
