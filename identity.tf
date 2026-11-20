@@ -1,6 +1,7 @@
 # Auto Mode includes the EKS Pod Identity agent. Associations match the chart's
 # service-account names and install namespace; a mismatch starts pods without AWS
-# credentials. The chart uses the bare names "api", "worker", and optional "mcp".
+# credentials. The chart uses the bare names "api", "worker", and optional "mcp",
+# plus "telemetry-relay" when the relay is on.
 
 # ----- Control-plane runtime role -----
 
@@ -10,9 +11,10 @@
 locals {
   pod_identity_assume_role_policies = {
     for role, service_accounts in {
-      cp_runtime   = var.pod_identity_service_accounts
-      eso          = ["external-secrets"]
-      external_dns = ["external-dns"]
+      cp_runtime      = var.pod_identity_service_accounts
+      eso             = ["external-secrets"]
+      external_dns    = ["external-dns"]
+      telemetry_relay = ["telemetry-relay"]
       } : role => jsonencode({
         Version = "2012-10-17"
         Statement = [{
@@ -169,6 +171,8 @@ resource "aws_eks_pod_identity_association" "cp_runtime" {
 # ----- Device telemetry writer role -----
 
 data "aws_iam_policy_document" "device_telemetry_writer_assume" {
+  source_policy_documents = var.enable_telemetry_relay ? [local.pod_identity_assume_role_policies.telemetry_relay] : []
+
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRole", "sts:TagSession"]
@@ -212,6 +216,19 @@ resource "aws_iam_role_policy" "device_telemetry_writer" {
   name   = "${var.name_prefix}-device-telemetry-writer"
   role   = aws_iam_role.device_telemetry_writer.id
   policy = data.aws_iam_policy_document.device_telemetry_writer.json
+}
+
+# The relay holds what device credentials already hold, not cp_runtime, whose
+# tenant-secret access has no ServiceAccount condition.
+resource "aws_eks_pod_identity_association" "telemetry_relay" {
+  count = var.enable_telemetry_relay ? 1 : 0
+
+  cluster_name    = aws_eks_cluster.this.name
+  namespace       = var.namespace
+  service_account = "telemetry-relay"
+  role_arn        = aws_iam_role.device_telemetry_writer.arn
+
+  tags = local.tags
 }
 
 # ----- External Secrets Operator role -----

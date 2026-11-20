@@ -460,6 +460,13 @@ variable "enable_registry_proxy" {
   nullable    = false
 }
 
+variable "enable_telemetry_relay" {
+  description = "Let devices send logs to CloudWatch through app_domain_name. Needs a pontem-control chart release newer than v0.37.0."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "oidc_client_id" {
   description = "Client ID of the public single-page-app client the admin UI signs in with. Used only by the browser; the API never sees it. Without it the admin UI renders a blank page while every pod reports healthy."
   type        = string
