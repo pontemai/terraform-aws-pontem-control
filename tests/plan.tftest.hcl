@@ -389,6 +389,15 @@ run "default_configuration" {
     error_message = "ExternalDNS IAM resources must be absent when neither Route53 input is set."
   }
 
+  assert {
+    condition = try(
+      length(aws_eks_pod_identity_association.telemetry_relay) == 0 &&
+      length(data.aws_iam_policy_document.device_telemetry_writer_assume.source_policy_documents) == 0,
+      false,
+    )
+    error_message = "With enable_telemetry_relay off, the relay must get no association and no writer-role trust, so existing installs plan no change."
+  }
+
   # Pin the mock; a generated region would make this string check meaningless.
   assert {
     condition     = aws_secretsmanager_secret.db_password.tags["ManagedBy"] == "terraform" && strcontains(output.update_kubeconfig_command, "--region us-east-1")
@@ -681,12 +690,67 @@ run "route53_zone_creates_records_and_waits" {
   }
 }
 
+run "telemetry_relay_uses_the_device_writer_role" {
+  command = plan
+
+  variables {
+    enable_telemetry_relay = true
+  }
+
+  override_resource {
+    target          = aws_acm_certificate.app
+    override_during = plan
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/example"
+    }
+  }
+
+  override_resource {
+    target          = aws_db_instance.this
+    override_during = plan
+    values = {
+      address = "db.example.com"
+    }
+  }
+
+  assert {
+    condition = try(
+      length(aws_eks_pod_identity_association.telemetry_relay) == 1 &&
+      aws_eks_pod_identity_association.telemetry_relay[0].namespace == "pontem-control" &&
+      aws_eks_pod_identity_association.telemetry_relay[0].service_account == "telemetry-relay" &&
+      aws_eks_pod_identity_association.telemetry_relay[0].role_arn == aws_iam_role.device_telemetry_writer.arn,
+      false,
+    )
+    error_message = "The telemetry-relay ServiceAccount in var.namespace must be associated with the device telemetry writer role."
+  }
+
+  assert {
+    condition = try(
+      one(jsondecode(one(data.aws_iam_policy_document.device_telemetry_writer_assume.source_policy_documents)).Statement).Principal.Service == "pods.eks.amazonaws.com" &&
+      one(jsondecode(one(data.aws_iam_policy_document.device_telemetry_writer_assume.source_policy_documents)).Statement).Condition.StringEquals == {
+        "aws:RequestTag/eks-cluster-arn"            = ["arn:aws:eks:us-east-1:123456789012:cluster/pontem-control"]
+        "aws:RequestTag/kubernetes-namespace"       = ["pontem-control"]
+        "aws:RequestTag/kubernetes-service-account" = ["telemetry-relay"]
+        "aws:SourceAccount"                         = ["123456789012"]
+      },
+      false,
+    )
+    error_message = "The writer role must trust Pod Identity only for telemetry-relay in this cluster and namespace."
+  }
+
+  assert {
+    condition     = try(yamldecode(output.helm_values).telemetryRelay == { enabled = true }, false)
+    error_message = "enable_telemetry_relay must reach the chart as telemetryRelay.enabled."
+  }
+}
+
 run "organization_scope_is_added_to_every_pod_identity_role" {
   command = plan
 
   variables {
-    aws_organization_id = "o-abc123def456"
-    route53_zone_id     = "Z0123456789ABCDEFGHIJ"
+    aws_organization_id    = "o-abc123def456"
+    route53_zone_id        = "Z0123456789ABCDEFGHIJ"
+    enable_telemetry_relay = true
   }
 
   assert {
@@ -695,6 +759,7 @@ run "organization_scope_is_added_to_every_pod_identity_role" {
         aws_iam_role.cp_runtime.assume_role_policy,
         aws_iam_role.eso.assume_role_policy,
         aws_iam_role.external_dns[0].assume_role_policy,
+        one(data.aws_iam_policy_document.device_telemetry_writer_assume.source_policy_documents),
       ] : jsondecode(policy).Statement[0].Condition.StringEquals["aws:SourceOrgId"] == ["o-abc123def456"]
     ])
     error_message = "Setting aws_organization_id must add the organization boundary to every Pod Identity trust policy."

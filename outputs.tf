@@ -21,7 +21,8 @@ module "chart_values" {
   db_name = aws_db_instance.this.db_name
   db_user = aws_db_instance.this.username
 
-  enable_registry_proxy = var.enable_registry_proxy
+  enable_registry_proxy  = var.enable_registry_proxy
+  enable_telemetry_relay = var.enable_telemetry_relay
 
   distribution   = var.distribution
   oidc_issuer    = var.oidc_issuer

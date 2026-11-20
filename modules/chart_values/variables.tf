@@ -116,6 +116,13 @@ variable "enable_registry_proxy" {
   nullable    = false
 }
 
+variable "enable_telemetry_relay" {
+  description = "Render telemetryRelay.enabled; omitted from chart values when false."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "alb_scheme" {
   description = "ALB scheme rendered as awsTurnkey.scheme."
   type        = string

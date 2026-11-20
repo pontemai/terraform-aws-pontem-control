@@ -22,12 +22,16 @@ install below.
   Operator.
 - When either Route53 option is set, an ExternalDNS Pod Identity role limited to
   that hosted zone and `app_domain_name`.
+- With `enable_telemetry_relay`, a Pod Identity association that lets the
+  telemetry relay use the device telemetry writer role.
 
 The Helm release installs External Secrets Operator, creates the application
 Secret from the three Secrets Manager secrets, and creates the `alb` IngressClass.
 When either Route53 option is set, it also installs ExternalDNS for the
 application hostname. With `enable_registry_proxy`, it also runs the registry
-proxy; see [Turn on the registry proxy](#turn-on-the-registry-proxy).
+proxy; see [Turn on the registry proxy](#turn-on-the-registry-proxy). With
+`enable_telemetry_relay`, it also runs the telemetry relay; see
+[Turn on the telemetry relay](#turn-on-the-telemetry-relay).
 
 ## Limits
 
@@ -528,6 +532,29 @@ Devices can then no longer pull images from proxied registries. Helm also
 deletes the `amazon-vpc-cni` ConfigMap, so any NetworkPolicy you added since
 turning it on may stop being enforced.
 
+### Turn on the telemetry relay
+
+The telemetry relay accepts device logs at
+`https://<app_domain_name>/pontem/telemetry/v1/logs` and writes them to the
+device log group. Turning it on does not change where devices send logs:
+devices keep sending them straight to CloudWatch until their log collector is
+configured to use the relay.
+
+It needs a pontem-control chart release newer than `v0.37.0`. With `v0.37.0` or
+older, the Helm upgrade fails the chart's values-schema check and changes
+nothing.
+
+Turning it on adds `/pontem/telemetry/` and `/telemetry/` routes on
+`app_domain_name`, served by a new relay deployment that uses the device
+telemetry writer role.
+
+1. Set `enable_telemetry_relay = true` and run `terraform apply`.
+2. Regenerate `values.yaml` and run the pinned Helm command in Deploy step 4,
+   with a chart release newer than `v0.37.0`.
+
+To turn it off, set `enable_telemetry_relay = false` and upgrade the same way.
+Devices that send logs through the relay can then no longer deliver them.
+
 ## Troubleshooting
 
 **The ExternalSecret does not report `SecretSynced`.** Confirm the release uses
@@ -637,6 +664,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | [aws_eks_pod_identity_association.cp_runtime](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_eks_pod_identity_association.eso](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_eks_pod_identity_association.external_dns](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
+| [aws_eks_pod_identity_association.telemetry_relay](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_pod_identity_association) | resource |
 | [aws_flow_log.vpc](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/flow_log) | resource |
 | [aws_iam_role.auto_node](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.cluster](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
@@ -720,6 +748,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | device\_secret\_pepper\_version | Version of the generated device secret pepper. Increase only for deliberate rotation; running devices re-key their caches after receiving the new pepper. | `number` | `1` | no |
 | distribution | Per-tenant distribution sources rendered into the chart values. agent.registryId selects the agent release mirror and allowFallback says whether devices may still use the public source. cli.registryId selects the CLI release mirror, an object-storage registry whose bucket allow-list names exactly the mirror bucket; a configured CLI source never falls back. Registry rows and credentials must already exist in the control plane. | <pre>object({<br/>    tenants = map(object({<br/>      agent = optional(object({<br/>        registryId    = string<br/>        allowFallback = optional(bool)<br/>      }))<br/>      cli = optional(object({<br/>        registryId = string<br/>      }))<br/>    }))<br/>  })</pre> | `null` | no |
 | enable\_registry\_proxy | Let devices pull private ECR images through app\_domain\_name. Turns on NetworkPolicy enforcement for the whole cluster. Read the README section "Turn on the registry proxy" before enabling. | `bool` | `false` | no |
+| enable\_telemetry\_relay | Let devices send logs to CloudWatch through app\_domain\_name. Needs a pontem-control chart release newer than v0.37.0. | `bool` | `false` | no |
 | enable\_vpc\_flow\_logs | Capture managed-VPC traffic metadata in CloudWatch. Ignored when vpc\_id is set; existing VPC logging stays customer-managed. This adds CloudWatch ingestion and storage costs. | `bool` | `true` | no |
 | existing\_device\_secret\_pepper\_secret\_arn | Full ARN of an existing device pepper secret in the provider's account and region. Null generates a pepper. The caller owns its value (standard base64 of 32 bytes), rotation, and any customer-managed KMS decryption grant for the ESO role. See the README before switching a generated pepper to existing mode. | `string` | `null` | no |
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
