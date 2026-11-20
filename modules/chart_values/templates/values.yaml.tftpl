@@ -69,6 +69,13 @@ downloadProxy:
   registry:
     enabled: true
 %{~ endif }
+%{~ if enable_telemetry_relay }
+
+# Accepts device logs at this hostname's /pontem/telemetry/v1/logs path and
+# writes them to observability.aws.logGroup under the device's identity.
+telemetryRelay:
+  enabled: true
+%{~ endif }
 
 # How the API validates the bearer tokens it receives. Supplied as plain values
 # because none of this is secret.
