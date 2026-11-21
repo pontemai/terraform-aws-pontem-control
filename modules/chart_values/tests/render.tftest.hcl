@@ -224,6 +224,11 @@ run "values_satisfy_the_chart_contract" {
     error_message = "downloadProxy must be omitted when the registry proxy is off so existing rendered values stay unchanged."
   }
 
+  assert {
+    condition     = !contains(keys(yamldecode(output.helm_values)), "telemetryRelay")
+    error_message = "telemetryRelay must be omitted when the telemetry relay is off so existing rendered values stay unchanged."
+  }
+
   # No key the chart's schema does not define: it sets additionalProperties
   # false at every level, so one stray top-level key fails the whole install.
   assert {
@@ -338,6 +343,31 @@ run "registry_proxy_is_rendered" {
       }
     }, false)
     error_message = "distribution must render unchanged next to downloadProxy."
+  }
+}
+
+# The registry proxy is on too: its block ends right where telemetryRelay starts.
+run "telemetry_relay_is_rendered" {
+  command = plan
+
+  variables {
+    enable_telemetry_relay = true
+    enable_registry_proxy  = true
+  }
+
+  assert {
+    condition     = try(yamldecode(output.helm_values).telemetryRelay == { enabled = true }, false)
+    error_message = "telemetryRelay must enable the relay, and nothing else."
+  }
+
+  assert {
+    condition = try(yamldecode(output.helm_values).downloadProxy == {
+      enabled = true
+      registry = {
+        enabled = true
+      }
+    }, false)
+    error_message = "downloadProxy must render unchanged next to telemetryRelay."
   }
 }
 
