@@ -5,8 +5,9 @@
 
 # ----- Control-plane runtime role -----
 
-# One role supplies tenant-secret and telemetry access plus the AWS identity used
-# for GCP federation. Session-tag conditions keep workload permissions separate.
+# One role supplies tenant-secret, telemetry and cluster-agent catalog access plus
+# the AWS identity used for GCP federation. Session-tag conditions keep workload
+# permissions separate.
 
 locals {
   pod_identity_assume_role_policies = {
@@ -163,8 +164,9 @@ data "aws_iam_policy_document" "cp_runtime" {
     }
   }
 
-  # shortcut: names only the chart's default repository; a plane that sets
-  # clusterAgent.imageRepository must extend this role. Add an input when one does.
+  # shortcut: names only the chart's default repository; a plane that changes
+  # image.repository or sets clusterAgent.imageRepository must extend this role.
+  # Add an input when one does.
   statement {
     effect    = "Allow"
     actions   = ["ecr:ListImages"]

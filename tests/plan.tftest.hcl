@@ -352,6 +352,8 @@ run "default_configuration" {
 
   assert {
     condition = try(
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).effect == "Allow" &&
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:ListImages")]).effect == "Allow" &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).actions) == toset(["ecr:GetAuthorizationToken"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).resources) == toset(["*"]) &&
       toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).condition).values) == toset(["api"]) &&
