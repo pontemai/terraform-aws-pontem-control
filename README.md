@@ -56,6 +56,13 @@ proxy; see [Turn on the registry proxy](#turn-on-the-registry-proxy). With
   Allow `https://<your-hostname>` as a web origin. The provider must issue
   refresh tokens for `offline_access`. In Auth0, enable **Allow Offline Access**
   on the API and the **Refresh Token** grant on the SPA application.
+- Optional, for `pontem login`: a second OIDC client for the Pontem CLI, from
+  the same issuer. Make it a public (native) client with no secret, and enable
+  the **Device Authorization** and **Refresh Token** grants. It must request
+  tokens for the same API audience as the SPA client, with the same scopes and
+  `email` claim, and be assigned to the same users. The issuer's discovery
+  document must publish a `device_authorization_endpoint`. Deploy step 4 shows
+  where its client ID goes.
 - From Pontem: read access to this module, a released module version, access to
   the distribution ECR registry, and a released chart version.
 - Managed packages are optional. To enable them, Pontem supplies `wif_audience`
@@ -304,7 +311,9 @@ listed in `cluster_admin_principal_arns`.
 ### 4. Install the Helm chart
 
 The second `--values` file is needed only when managed packages are enabled.
-Omit that line if you skipped step 2.
+Omit that line if you skipped step 2. The `--set-string` line is needed only if
+you created a CLI client; omit it otherwise. Keep both on every later upgrade,
+because the generated `values.yaml` contains neither.
 
 ```bash
 terraform output -raw helm_values > values.yaml
@@ -320,6 +329,7 @@ helm upgrade --install pontem-control \
   --create-namespace \
   --values values.yaml \
   --values managed-sync-values.yaml \
+  --set-string auth.oidc.cliClientId="<cli-client-id>" \
   --wait --timeout 10m
 ```
 
