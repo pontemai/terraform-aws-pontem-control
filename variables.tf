@@ -476,3 +476,14 @@ variable "oidc_client_id" {
     error_message = "oidc_client_id must be set — the admin UI cannot start without it."
   }
 }
+
+variable "oidc_cli_client_id" {
+  description = "Client ID of the native-app client the CLI signs in with (`pontem login --device`). It must allow the device authorization grant and refresh tokens. Used only by the CLI; the admin UI never sees it. Without it the CLI can sign in only with an API key."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.oidc_cli_client_id == null ? true : length(var.oidc_cli_client_id) > 0
+    error_message = "oidc_cli_client_id must be non-empty when set — leave it null to turn off CLI sign-in."
+  }
+}

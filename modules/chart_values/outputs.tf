@@ -40,9 +40,10 @@ output "helm_values" {
         )
       }
     }
-    oidc_audience  = var.oidc_audience
-    oidc_client_id = var.oidc_client_id
-    oidc_issuer    = var.oidc_issuer
-    wif_audience   = var.wif_audience
+    oidc_audience      = var.oidc_audience
+    oidc_cli_client_id = var.oidc_cli_client_id
+    oidc_client_id     = var.oidc_client_id
+    oidc_issuer        = var.oidc_issuer
+    wif_audience       = var.wif_audience
   })
 }

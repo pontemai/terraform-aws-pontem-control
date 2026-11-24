@@ -79,6 +79,12 @@ variable "oidc_client_id" {
   type        = string
 }
 
+variable "oidc_cli_client_id" {
+  description = "Native-app client ID, rendered as auth.oidc.cliClientId when set. CLI-only."
+  type        = string
+  default     = null
+}
+
 variable "wif_audience" {
   description = "GCP Workload Identity Federation audience, rendered as gcp.wifAudience."
   type        = string
