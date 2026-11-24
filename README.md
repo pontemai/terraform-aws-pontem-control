@@ -56,6 +56,12 @@ proxy; see [Turn on the registry proxy](#turn-on-the-registry-proxy). With
   Allow `https://<your-hostname>` as a web origin. The provider must issue
   refresh tokens for `offline_access`. In Auth0, enable **Allow Offline Access**
   on the API and the **Refresh Token** grant on the SPA application.
+- Optional, for `pontem login --device`: a native-app client (a public client
+  with no secret). Enable the device authorization grant and refresh tokens for
+  `offline_access`, and pass its ID as `oidc_cli_client_id`. In Auth0, create a
+  **Native** application, enable the **Device Code** and **Refresh Token** grants
+  under Advanced Settings → Grant Types, and keep **Allow Offline Access** on the
+  API. Without it the CLI signs in with an API key only.
 - From Pontem: read access to this module, a released module version, access to
   the distribution ECR registry, and a released chart version.
 - Managed packages are optional. To enable them, Pontem supplies `wif_audience`
@@ -92,6 +98,9 @@ module "pontem_control" {
   oidc_issuer    = "https://example.us.auth0.com/"
   oidc_audience  = "https://pontem.example.com"
   oidc_client_id = "YourOidcSpaClientId"
+
+  # Optional: enables `pontem login --device`.
+  oidc_cli_client_id = "YourOidcNativeClientId"
 
   # Optional: enables automatic ACM validation and application DNS.
   route53_zone_id = "Z0123456789ABCDEFGHIJ"
@@ -754,6 +763,7 @@ Contributing requires Terraform 1.11.4 or newer.
 | kubernetes\_version | EKS Kubernetes version. Must be >= 1.30: the pontem-control chart uses the native preStop sleep action, which does not exist before 1.30. The cluster's upgrade policy is STANDARD, so AWS auto-upgrades a version once it leaves standard support — after that happens, this must be raised to the version the cluster is actually on or every apply fails proposing a downgrade. | `string` | `"1.36"` | no |
 | name\_prefix | Prefix for every resource name this module creates. CHANGING THIS REPLACES THE CLUSTER AND THE DATABASE, destroying the data in them. Two stacks in one account need different prefixes. | `string` | `"pontem-control"` | no |
 | namespace | Kubernetes namespace the chart is installed into. The Pod Identity associations bind service accounts in this namespace, so it must match the namespace you pass to `helm install`; if they drift, the pods start but get no AWS credentials. | `string` | `"pontem-control"` | no |
+| oidc\_cli\_client\_id | Client ID of the native-app client the CLI signs in with (`pontem login --device`). It must allow the device authorization grant and refresh tokens. Used only by the CLI; the admin UI never sees it. Without it the CLI can sign in only with an API key. | `string` | `null` | no |
 | pod\_identity\_service\_accounts | Service accounts in `namespace` bound to the control-plane runtime role. The chart's api and worker pods both need AWS credentials for tenant-secret storage. Add "mcp" only if you enable the mcp deployment (it is off unless you set mcp.host in the chart). | `list(string)` | <pre>[<br/>  "api",<br/>  "worker"<br/>]</pre> | no |
 | private\_subnet\_ids | Existing private subnets for EKS and RDS, spanning at least two standard AZs in vpc\_id. Internal ALBs also use this list, requiring one subnet per AZ. Empty when creating a VPC. | `list(string)` | `[]` | no |
 | public\_subnet\_ids | Existing ALB public subnets: one per AZ, in at least two standard AZs in vpc\_id. Required for an internet-facing ALB with vpc\_id; otherwise must be empty. | `list(string)` | `[]` | no |

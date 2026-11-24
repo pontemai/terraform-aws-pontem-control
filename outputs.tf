@@ -24,11 +24,12 @@ module "chart_values" {
   enable_registry_proxy  = var.enable_registry_proxy
   enable_telemetry_relay = var.enable_telemetry_relay
 
-  distribution   = var.distribution
-  oidc_issuer    = var.oidc_issuer
-  oidc_audience  = var.oidc_audience
-  oidc_client_id = var.oidc_client_id
-  wif_audience   = var.wif_audience
+  distribution       = var.distribution
+  oidc_issuer        = var.oidc_issuer
+  oidc_audience      = var.oidc_audience
+  oidc_client_id     = var.oidc_client_id
+  oidc_cli_client_id = var.oidc_cli_client_id
+  wif_audience       = var.wif_audience
 }
 
 # ----- Cluster access -----
