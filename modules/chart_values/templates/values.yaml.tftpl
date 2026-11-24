@@ -84,6 +84,9 @@ auth:
   oidc:
     issuer: "${oidc_issuer}"
     audience: "${oidc_audience}"
+%{~ if oidc_cli_client_id != null }
+    cliClientId: "${oidc_cli_client_id}"
+%{~ endif }
 
 externalDatabase:
   # Password-less DSN: the application rejects a password embedded in the URL and

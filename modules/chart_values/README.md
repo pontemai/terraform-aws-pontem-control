@@ -51,6 +51,7 @@ comments.
 | distribution | Per-tenant agent and CLI distribution sources; omitted from chart values when unset. Registry rows must already exist in the control plane. | <pre>object({<br/>    tenants = map(object({<br/>      agent = optional(object({<br/>        registryId    = string<br/>        allowFallback = optional(bool)<br/>      }))<br/>      cli = optional(object({<br/>        registryId = string<br/>      }))<br/>    }))<br/>  })</pre> | `null` | no |
 | enable\_registry\_proxy | Render downloadProxy.enabled and downloadProxy.registry.enabled; omitted from chart values when false. | `bool` | `false` | no |
 | enable\_telemetry\_relay | Render telemetryRelay.enabled; omitted from chart values when false. | `bool` | `false` | no |
+| oidc\_cli\_client\_id | Native-app client ID, rendered as auth.oidc.cliClientId when set. CLI-only. | `string` | `null` | no |
 | route53\_zone\_id | Route53 hosted zone ID; becomes externalDns.zoneIdFilters and its effective zone-id-filter argument. Null disables ExternalDNS. | `string` | `null` | no |
 
 ## Outputs

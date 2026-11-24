@@ -34,6 +34,9 @@ module "pontem_control" {
 
   # ----- Optional -----
 
+  # Optional native-app client for `pontem login --device`.
+  # oidc_cli_client_id = "YourAuth0NativeClientId"
+
   # Optional caller-owned pepper in this provider's account and region.
   # See the README for KMS grants and the generated-to-existing handoff.
   # existing_device_secret_pepper_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:acme-device-secret-pepper-Ab12Cd"
