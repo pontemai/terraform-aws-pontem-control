@@ -5,8 +5,9 @@
 
 # ----- Control-plane runtime role -----
 
-# One role supplies tenant-secret and telemetry access plus the AWS identity used
-# for GCP federation. Session-tag conditions keep workload permissions separate.
+# One role supplies tenant-secret, telemetry and cluster-agent catalog access plus
+# the AWS identity used for GCP federation. Session-tag conditions keep workload
+# permissions separate.
 
 locals {
   pod_identity_assume_role_policies = {
@@ -141,6 +142,35 @@ data "aws_iam_policy_document" "cp_runtime" {
     effect    = "Allow"
     actions   = ["sts:AssumeRole"]
     resources = [aws_iam_role.device_telemetry_writer.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api"]
+    }
+  }
+
+  # The api's cluster-agent version list is the tags of the cluster-agent image
+  # repository. A registry token can't be scoped to one repository, hence "*".
+  statement {
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalTag/kubernetes-service-account"
+      values   = ["api"]
+    }
+  }
+
+  # shortcut: names only the chart's default repository; a plane that changes
+  # image.repository or sets clusterAgent.imageRepository must extend this role.
+  # Add an input when one does.
+  statement {
+    effect    = "Allow"
+    actions   = ["ecr:ListImages"]
+    resources = ["arn:aws:ecr:us-east-1:415039713698:repository/pontem/cluster-agent"]
 
     condition {
       test     = "StringEquals"

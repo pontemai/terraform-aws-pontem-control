@@ -352,6 +352,21 @@ run "default_configuration" {
 
   assert {
     condition = try(
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).effect == "Allow" &&
+      one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:ListImages")]).effect == "Allow" &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).actions) == toset(["ecr:GetAuthorizationToken"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).resources) == toset(["*"]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:GetAuthorizationToken")]).condition).values) == toset(["api"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:ListImages")]).actions) == toset(["ecr:ListImages"]) &&
+      toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:ListImages")]).resources) == toset(["arn:aws:ecr:us-east-1:415039713698:repository/pontem/cluster-agent"]) &&
+      toset(one(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "ecr:ListImages")]).condition).values) == toset(["api"]),
+      false,
+    )
+    error_message = "Only api may list the cluster-agent catalog repository's tags, and only that repository."
+  }
+
+  assert {
+    condition = try(
       one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).effect == "Allow" &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).actions) == toset(["sts:AssumeRole"]) &&
       toset(one([for statement in data.aws_iam_policy_document.cp_runtime.statement : statement if contains(statement.actions, "sts:AssumeRole")]).resources) == toset([aws_iam_role.device_telemetry_writer.arn]) &&
